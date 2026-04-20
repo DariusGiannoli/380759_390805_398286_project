@@ -1,30 +1,52 @@
 import numpy as np
+from itertools import combinations_with_replacement
 
 
 class LinearRegression(object):
     """
-    Linear regression.
+    Linear regression with optional polynomial feature expansion.
     """
 
-    def __init__(self, lambda_reg=0, method = 'closed_form', lr = 0.01, max_iters = 1000):
+    def __init__(self, lambda_reg=0, method='closed_form', lr=0.01, max_iters=1000,
+                 degree=1, interaction=False):
+        self.lambda_reg = lambda_reg  # L2 regularization strength
+        self.method = method          # 'closed_form' or 'gradient_descent'
+        self.lr = lr
+        self.max_iters = max_iters
+        self.degree = degree          # 1 = standard, 2+ = polynomial expansion
+        self.interaction = interaction  # False = per-feature powers, True = full cross-terms
+        self.weights = None
+        self.loss_history = []
+
+    def _expand_features(self, X):
         """
-        Initialize the new object (see dummy_methods.py)
-        and set its arguments.
+        Polynomial feature expansion.
+        degree=1 : returns X unchanged
+        degree>1, interaction=False : adds x^2, x^3, ... per feature (no cross-terms)
+        degree>1, interaction=True  : full expansion including cross-terms (x1*x2, etc.)
         """
-        self.lambda_reg = lambda_reg # regularization parameter 
-        self.method = method # method to solve linear regression, either 'closed_form' or 'gradient_descent'
-        self.lr = lr # learning rate for gradient descent
-        self.max_iters = max_iters # maximum number of iterations for gradient descent
-        self.weights = None # weights learned during fit()
-        self.loss_history = [] # to store the loss history during gradient descent
-        
-        
+        if self.degree == 1:
+            return X
+
+        N, D = X.shape
+        features = [X]
+
+        if self.interaction:
+            # Full polynomial: all combinations with replacement up to degree
+            for d in range(2, self.degree + 1):
+                for combo in combinations_with_replacement(range(D), d):
+                    new_feat = np.prod(X[:, combo], axis=1, keepdims=True)
+                    features.append(new_feat)
+        else:
+            # Per-feature only: x^2, x^3, ... no cross-terms
+            for d in range(2, self.degree + 1):
+                features.append(X ** d)
+
+        return np.hstack(features)
+
     def fit(self, training_data, training_labels):
         """
         Trains the model, returns predicted labels for training data.
-
-        Hint: You can use the closed-form solution for linear regression
-        (with or without regularization). Remember to handle the bias term.
 
         Arguments:
             training_data (np.array): training data of shape (N,D)
@@ -33,43 +55,35 @@ class LinearRegression(object):
             pred_labels (np.array): target of shape (N,)
         """
         N, D = training_data.shape
-        X = np.hstack([training_data, np.ones((N, 1))])
+        X_poly = self._expand_features(training_data)
+        D_poly = X_poly.shape[1]
+        X = np.hstack([X_poly, np.ones((N, 1))])
 
         if self.method == 'closed_form':
-            self._fit_closed_form(X, training_labels, D)
+            self._fit_closed_form(X, training_labels, D_poly)
         elif self.method == 'gradient_descent':
-            self._fit_gradient_descent(X, training_labels, N, D)
+            self._fit_gradient_descent(X, training_labels, N, D_poly)
 
-        return X @ self.weights 
-    
+        return X @ self.weights
+
     def _fit_closed_form(self, X, training_labels, D):
-        """
-        Private helper method to fit the model using closed-form solution
-        Closed-form solution: w = (XᵀX + λI)⁻¹ Xᵀy
-        """
+        """Closed-form solution: w = (XᵀX + λI)⁻¹ Xᵀy"""
         I = np.eye(D + 1)
         I[-1, -1] = 0  # don't regularize bias
-        XtX = X.T @ X
-        Xty = X.T @ training_labels
-        self.weights = np.linalg.solve(XtX + self.lambda_reg * I, Xty) 
-        
+        self.weights = np.linalg.solve(X.T @ X + self.lambda_reg * I, X.T @ training_labels)
+
     def _fit_gradient_descent(self, X, training_labels, N, D):
-        """
-        Private helper method to fit the model using gradient descent
-        Iterative solution via gradient descent
-        """
+        """Iterative solution via gradient descent."""
         self.weights = np.zeros(D + 1)
         self.loss_history = []
 
         for _ in range(self.max_iters):
             preds = X @ self.weights
-            residuals = preds - training_labels           # (N,)
-            # gradient of MSE loss + L2 regularization
+            residuals = preds - training_labels
             grad = (2 / N) * X.T @ residuals
             grad[:-1] += 2 * self.lambda_reg * self.weights[:-1]  # don't regularize bias
             self.weights -= self.lr * grad
             self.loss_history.append(np.mean(residuals ** 2))
-        
 
     def predict(self, test_data):
         """
@@ -81,5 +95,6 @@ class LinearRegression(object):
             pred_labels (np.array): labels of shape (N,)
         """
         N = test_data.shape[0]
-        X = np.hstack([test_data, np.ones((N, 1))])
+        X_poly = self._expand_features(test_data)
+        X = np.hstack([X_poly, np.ones((N, 1))])
         return X @ self.weights

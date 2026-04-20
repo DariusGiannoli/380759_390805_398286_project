@@ -90,7 +90,8 @@ def main(args):
         method_obj = DummyClassifier(arg1=1, arg2=2)
 
     elif args.method == "knn":
-        method_obj = KNN(k=args.K, task_kind=args.task)
+        method_obj = KNN(k=args.K, task_kind=args.task,
+                         weighted=args.weighted, metric=args.metric)
 
     elif args.method == "logistic_regression":
         method_obj = LogisticRegression(lr=args.lr, max_iters=args.max_iters,
@@ -102,7 +103,9 @@ def main(args):
             lambda_reg=args.lambda_reg,
             method=args.lr_method,
             lr=args.lr,
-            num_iters=args.max_iters
+            max_iters=args.max_iters,
+            degree=args.degree,
+            interaction=args.interaction
         )
 
     else:
@@ -190,6 +193,10 @@ if __name__ == "__main__":
                         help="path to dataset .npz file")
     parser.add_argument("--K",          default=1,    type=int,
                         help="number of neighbors for KNN")
+    parser.add_argument("--weighted",   action="store_true",
+                        help="use distance-weighted voting for KNN")
+    parser.add_argument("--metric",     default="l2", type=str,
+                        help="distance metric for KNN: l2 / l1 / cosine")
     parser.add_argument("--lr",         default=1e-5, type=float,
                         help="learning rate for iterative methods")
     parser.add_argument("--max_iters",  default=100,  type=int,
@@ -198,6 +205,10 @@ if __name__ == "__main__":
                         help="L2 regularization strength")
     parser.add_argument("--lr_method",  default="closed_form", type=str,
                         help="linear regression method: closed_form / gradient_descent")
+    parser.add_argument("--degree",      default=1,    type=int,
+                        help="polynomial degree for linear regression (1 = standard)")
+    parser.add_argument("--interaction", action="store_true",
+                        help="include cross-term interactions in polynomial expansion")
     parser.add_argument("--beta",        default=0.0,  type=float,
                         help="momentum coefficient for logistic regression (0 = vanilla GD)")
     parser.add_argument("--tol",         default=None, type=float,
