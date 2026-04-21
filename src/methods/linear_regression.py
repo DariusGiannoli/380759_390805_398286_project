@@ -8,12 +8,12 @@ class LinearRegression(object):
     """
 
     def __init__(self, lambda_reg=0, method='closed_form', lr=0.01, max_iters=1000,
-                 degree=1, interaction=False):
-        self.lambda_reg = lambda_reg  # L2 regularization strength
-        self.method = method          # 'closed_form' or 'gradient_descent'
+                degree=1, interaction=False):
+        self.lambda_reg = lambda_reg    # L2 regularization strength
+        self.method = method            # 'closed_form' or 'gradient_descent'
         self.lr = lr
         self.max_iters = max_iters
-        self.degree = degree          # 1 = standard, 2+ = polynomial expansion
+        self.degree = degree            # 1 = standard, 2+ = polynomial expansion
         self.interaction = interaction  # False = per-feature powers, True = full cross-terms
         self.weights = None
         self.loss_history = []
