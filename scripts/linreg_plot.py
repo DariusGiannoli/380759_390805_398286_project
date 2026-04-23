@@ -16,6 +16,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
 
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from src.methods.linear_regression import LinearRegression
 from src.utils import normalize_fn
 from src.evaluation import kfold_cross_validation

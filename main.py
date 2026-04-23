@@ -7,8 +7,18 @@ from src.methods.logistic_regression import LogisticRegression
 from src.methods.linear_regression import LinearRegression
 from src.methods.knn import KNN
 from src.utils import normalize_fn
-from src import evaluation
-from src import optimization
+from src.evaluation import (
+    train_and_evaluate_classification, train_and_evaluate_regression,
+    plot_confusion_matrix, compute_learning_curve, plot_learning_curve,
+    plot_loss_curve, stratified_kfold_cross_validation,
+    timing_comparison, plot_timing, kfold_cross_validation,
+)
+from src.optimization import (
+    hyperparameter_sweep, plot_hyperparameter_sweep,
+    ablation_comparison, plot_ablation,
+    tune_linear_regression, tune_logistic_regression, tune_knn,
+    compare_cv_methods, plot_cv_comparison,
+)
 
 np.random.seed(100)
 

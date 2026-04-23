@@ -66,7 +66,7 @@ search spaces (LogReg's $\eta\!\times\!\beta\!\times\!T$; KNN's
 $k\!\times\!\text{metric}\!\times\!\text{weighted}$) use coarse-to-fine refinement; the resulting sweep curves are summarized in Fig.~\ref{fig:sweeps}.
  \begin{figure}[h!]
     \centering
-    \includegraphics[width=\columnwidth]{all_sweeps.png}
+    \includegraphics[width=\columnwidth]{plots/all_sweeps.png}
     \vspace{-0.3cm}
     \caption{5-fold CV hyperparameter sweeps for the required methods.
     \textbf{(a)} LinReg ridge $\lambda$ (log-$x$, MSE);
@@ -109,7 +109,7 @@ the linear kernel matches it at $0.969$, within fold noise
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=\columnwidth]{linreg_summary.png}
+    \includegraphics[width=\columnwidth]{plots/linreg_summary.png}
     \vspace{-0.3cm}
     \caption{Linear regression variants. \textbf{(a)} Median fit time
     (log-scale). \textbf{(b)} Train MSE (light) vs 5-fold CV MSE
@@ -154,7 +154,7 @@ the probabilistic one by $\sim\!0.01$ on held-out (Table~\ref{tab:final}).
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=\columnwidth]{logreg_summary.png}
+    \includegraphics[width=\columnwidth]{plots/logreg_summary.png}
     \vspace{-0.3cm}
     \caption{Logistic Regression variants. \textbf{(a)} Median fit time
     (log scale). \textbf{(b)} 5-fold stratified CV accuracy (lighter)
@@ -188,7 +188,7 @@ MSE $\mathbf{1.62}$ for regression (Table~\ref{tab:final}).
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=\columnwidth]{knn_summary.png}
+    \includegraphics[width=\columnwidth]{plots/knn_summary.png}
     \vspace{-0.3cm}
     \caption{KNN across $k$ with three distance metrics
     (inverse-distance weighted). \textbf{(a)} 5-fold stratified CV
@@ -232,12 +232,12 @@ being minority-class recall on the 3.2\% High class---a data problem
 more than a model problem. \textbf{What didn't work:} polynomial/RBF
 expansions, over-regularization (LogReg F1 collapses to $0.513$ at
 $\lambda{=}100$), very small $k$ (KNN F1 $0.58$ at $k{=}1$), and pure
-SGD (F1 $0.655$); the High-class gap (5 vs 4 correct) is one test
-sample and should not be over-interpreted.
+SGD (F1 $0.655$); the High-class gap (5 vs 7 correct) is two test
+samples on the 11-sample minority and should not be over-interpreted.
 
 \begin{figure}[h]
     \centering
-    \includegraphics[width=\columnwidth]{confusion_matrices.png}
+    \includegraphics[width=\columnwidth]{plots/confusion_matrices.png}
     \vspace{-0.3cm}
     \caption{Test-set confusion matrices (row-normalized recall) for the
     two best classifiers. Both capture Low near-perfectly but struggle

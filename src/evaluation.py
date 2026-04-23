@@ -207,9 +207,9 @@ def loocv_linear_regression(features, labels, lambda_reg):
     N, D = features.shape
     X    = np.hstack([features, np.ones((N, 1))])
 
-    I         = np.eye(D + 1)
-    I[-1, -1] = 0
-    XtX_reg   = X.T @ X + lambda_reg * I
+    reg         = np.eye(D + 1)
+    reg[-1, -1] = 0.0
+    XtX_reg     = X.T @ X + lambda_reg * reg
 
     H         = X @ np.linalg.solve(XtX_reg, X.T)
     w         = np.linalg.solve(XtX_reg, X.T @ labels)
