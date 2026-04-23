@@ -1,0 +1,270 @@
+\documentclass[10pt,twocolumn,a4paper]{article}
+
+\usepackage[margin=1.5cm]{geometry}
+\usepackage{graphicx}
+\usepackage{amsmath,amssymb}
+\usepackage{booktabs}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{hyperref}
+
+% Tighter section spacing
+\usepackage{titlesec}
+\titlespacing*{\section}{0pt}{0.8em}{0.3em}
+\titlespacing*{\subsection}{0pt}{0.5em}{0.2em}
+\titleformat{\section}{\normalsize\bfseries}{\thesection}{0.5em}{}
+\titleformat{\subsection}{\small\bfseries\itshape}{\thesubsection}{0.5em}{}
+
+% Tighter captions
+\captionsetup{font=small, skip=3pt}
+
+\begin{document}
+
+% Title inside the first column — no \twocolumn[...] wrapper
+\begin{center}
+{\Large\bfseries Intro to ML — Milestone 1 Report}\\[0.6em]
+{\footnotesize
+\begin{tabular}{c c c}
+Darius Giannoli & Stella Arsie & Ludovica Marcon \\
+(380759) & (390805) & (398286)
+\end{tabular}}
+\end{center}
+
+\section{Introduction}
+
+Predicting addictive behaviors from behavioral data is a canonical supervised learning task. We study the Gaming and Mental Health dataset (2000 synthetic samples,
+13 gaming-habit features) across two tasks: regression of a continuous
+addiction score, and 3-class classification of addiction level (Low,
+Medium, High). We compare three method families: linear regression
+(Linear Regression, Kernel Ridge), linear classification (Logistic
+Regression, Linear SVM), and instance-based prediction
+($k$-Nearest Neighbors). Severe class imbalance between majority and
+minority classes makes accuracy misleading and drives macro-F1 as our
+primary classification metric; we also report accuracy and MSE.
+Hyperparameters are selected by 5-fold cross-validation.
+
+\section{Methodology}
+\subsection{Data \& Preprocessing}
+The 13 features span more than three orders of magnitude in standard
+deviation (largest $\approx\!514$, smallest $\approx\!0.19$), so we
+z-score normalize using training-set statistics. Class counts: Low
+$68.9\%$, Medium $27.9\%$, High $3.2\%$; a majority-class predictor
+reaches $70.0\%$ accuracy but only $0.275$ macro-F1. The regression
+target is right-skewed (mean $2.79$, median $2$, range $0$--$10$).
+We use an 80/20 train/test split.
+
+
+\subsection{Cross-Validation}
+Folds are stratified for classification ($n{=}51$ High samples in train
+would otherwise risk empty validation folds), and the final model is
+refit on all training data before evaluation. For Linear Regression we
+additionally cross-check against exact leave-one-out CV via the
+hat-matrix shortcut $\text{LOO}_i = r_i/(1{-}H_{ii})$ (no $N$ refits);
+5-fold and LOOCV agree within $\pm 0.005$ MSE across the $\lambda$
+sweep, while a single held-out split is $\sim\!0.07$ MSE noisier. Large
+search spaces (LogReg's $\eta\!\times\!\beta\!\times\!T$; KNN's
+$k\!\times\!\text{metric}\!\times\!\text{weighted}$) use coarse-to-fine refinement; the resulting sweep curves are summarized in Fig.~\ref{fig:sweeps}.
+ \begin{figure}[h!]
+    \centering
+    \includegraphics[width=\columnwidth]{all_sweeps.png}
+    \vspace{-0.3cm}
+    \caption{5-fold CV hyperparameter sweeps for the required methods.
+    \textbf{(a)} LinReg ridge $\lambda$ (log-$x$, MSE);
+    \textbf{(b)} LogReg learning rate (log-$x$, 1$-$acc);
+    \textbf{(c,d)} KNN neighbor count $k$ for classification (1$-$acc)
+    and regression (MSE). Red markers = selected value.}
+    \label{fig:sweeps}
+\end{figure}
+
+
+\section{Methods \& Results}
+
+\subsection{Linear regression for addiction score (LinReg, KRR)}
+\label{sec:linreg}
+We fit linear regression by three solvers of the same objective
+$\|\mathbf{Xw}{-}\mathbf{y}\|^{2} + \lambda\|\mathbf{w}_{\setminus b}\|^{2}$:
+(i) closed-form ridge
+$\mathbf{w}^{*} = (\mathbf{X}^{\!\top}\mathbf{X} + \lambda\mathbf{I})^{-1}\mathbf{X}^{\!\top}\mathbf{y}$
+(bias unregularized), (ii) gradient descent, and (iii) Kernel Ridge
+Regression (KRR) via the dual form
+$\boldsymbol{\alpha}=(\mathbf{K}+\lambda\mathbf{I})^{-1}(\mathbf{y}-\bar{y})$
+with linear, polynomial or RBF kernels. The parametric path also
+supports polynomial feature expansion (per-feature or with cross-terms).
+
+The three solvers coincide on the linear problem: CF and GD converge to
+identical weights ($\|\Delta\mathbf{w}\|/\|\mathbf{w}\|\approx 10^{-16}$),
+and KRR with the \emph{linear} kernel reproduces LinReg's ridge solution
+to machine precision. Adding non-linearity hurts: polynomial cross-terms ($d{=}2\!+\!$int) overfit
+(train $0.92$, CV $1.08$, Fig.~\ref{fig:linreg}b); $d{=}3$ lies within
+the $0.068$ fold std of baseline; KRR with RBF $\sigma{=}1$ reaches CV
+MSE $3.68$, polynomial $d{=}3$ reaches $2.61$, and only wide-$\sigma$
+RBF ($\sigma\!\geq\!10$) approaches the linear kernel. Three independent
+parametrizations converge on the same conclusion: the regression signal
+is near-linear in the 13 z-scored features.
+
+We select the simpler ridge solution: CF ridge, $\lambda{=}10$
+(Fig.~\ref{fig:sweeps}a), $d{=}1$, test MSE $\mathbf{0.993}$; KRR with
+the linear kernel matches it at $0.969$, within fold noise
+(Table~\ref{tab:final}).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\columnwidth]{linreg_summary.png}
+    \vspace{-0.3cm}
+    \caption{Linear regression variants. \textbf{(a)} Median fit time
+    (log-scale). \textbf{(b)} Train MSE (light) vs 5-fold CV MSE
+    (dark, $\pm$ std). Selected: CF ridge, $\lambda{=}10$, $d{=}1$.}
+    \label{fig:linreg}
+\end{figure}
+
+\subsection{Linear classification for addiction level (LogReg, SVM)}
+\label{sec:logreg}
+Both Logistic Regression and Linear SVM parametrize a linear decision
+boundary $\mathbf{W}^{\!\top}\mathbf{x}$; they differ only in the
+surrogate loss---multinomial softmax cross-entropy vs Crammer--Singer
+hinge---so a head-to-head isolates the effect of the loss function.
+LogReg supports Xavier init, heavy-ball momentum, early stopping, L2
+regularization (bias excluded), inverse-frequency class-weighted CE,
+polynomial expansion, and mini-batch SGD. SVM shares the same optimizer
+options, making the two directly comparable.
+
+At the learning-rate plateau ($\eta{=}0.3$, chosen from
+Fig.~\ref{fig:sweeps}b) with 1000 iters, every LogReg optimizer
+enhancement converges to macro-F1 $\approx\!0.758$ in 5-fold stratified
+CV (Fig.~\ref{fig:logreg}b): momentum, Xavier init, and early
+stopping are redundant once the optimizer has enough
+steps. Mini-batch SGD at $bs{=}32$ matches this F1 at
+${\sim}4\!\times$ less fit time (30 ms vs 130 ms); pure SGD is too
+noisy (F1 $0.655$). The one knob that improves the primary metric is
+\emph{inverse-frequency class weighting} (F1 $0.769$, $-1.4$\,pp
+accuracy)---a trade the $21\!\times$ imbalance makes worth taking.
+Over-regularization collapses minority F1 ($\lambda{=}100$: $0.513$);
+polynomial cross-terms overfit ($d{=}2\!+\!$int: $0.726$).
+Switching to hinge loss (SVM, $\lambda{=}10^{-2}$) gives CV F1 $0.764$
+---within noise of LogReg--- but class weighting \emph{hurts} SVM
+($0.746$): hinge already ignores easy-correct points, so up-weighting
+the minority double-counts what the model already handles. The Kernel
+Least-Squares Classifier (KLS, one-hot multi-output KRR) with polynomial
+$d{=}2$ reaches CV F1 $0.723$, still below either parametric linear
+classifier.
+
+Final models: class-weighted LogReg (test F1 $0.706$) and SVM
+$\lambda{=}10^{-2}$ (test F1 $\mathbf{0.713}$); the margin loss edges
+the probabilistic one by $\sim\!0.01$ on held-out (Table~\ref{tab:final}).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\columnwidth]{logreg_summary.png}
+    \vspace{-0.3cm}
+    \caption{Logistic Regression variants. \textbf{(a)} Median fit time
+    (log scale). \textbf{(b)} 5-fold stratified CV accuracy (lighter)
+    and macro-F1 (darker, $\pm$ std). Selected: class-weighted CE with
+    momentum.}
+    \label{fig:logreg}
+\end{figure}
+
+\subsection{Instance-based prediction (KNN, both tasks)}
+\label{sec:knn}
+We implemented a unified KNN for both tasks: majority vote for
+classification and mean target for regression, with L1, L2 or cosine
+distance and optional inverse-distance weighting of the neighbors.
+
+A full grid over $k\!\times\!\text{metric}\!\times\!\text{weighted}$
+(5-fold stratified CV for classification, random 5-fold for regression)
+picks the same winning configuration for both tasks:
+$k{=}17$, cosine, inverse-distance weighted (Fig.~\ref{fig:knn}).
+Cosine dominates the other two metrics by a clear margin on both
+panels---after z-score normalization the features already live at
+comparable scales, so directional (cosine) similarity carries more
+signal than absolute L1/L2 distance. Small $k$ overfits
+(classification F1 drops to $\approx\!0.58$ at $k{=}1$); large $k$
+under-fits; the curves bottom out in the $k\!\in\![10,20]$ range.
+Inverse-distance weighting consistently outperforms uniform weighting;
+predict time is metric-dependent and linear in $N$
+(see §\ref{sec:latency}).
+Selected model ($k{=}17$, cosine, weighted) achieves $80.1\%$ test
+accuracy and macro-F1 $\mathbf{0.623}$ for classification, and test
+MSE $\mathbf{1.62}$ for regression (Table~\ref{tab:final}).
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\columnwidth]{knn_summary.png}
+    \vspace{-0.3cm}
+    \caption{KNN across $k$ with three distance metrics
+    (inverse-distance weighted). \textbf{(a)} 5-fold stratified CV
+    macro-F1, classification. \textbf{(b)} 5-fold CV MSE, regression.
+    Selected: $k{=}17$, cosine, weighted.}
+    \label{fig:knn}
+\end{figure}
+
+\section{Discussion \& Conclusion}
+\subsection{Latency and scalability}
+\label{sec:latency}
+Fit and predict costs split the methods sharply. Closed-form LinReg fits
+in $\sim\!0.1$\,ms ($\sim\!500\!\times$ faster than GD). LogReg and SVM
+mini-batch take $30$--$60$\,ms. KNN's predict is $O(N)$ per query
+($37$--$238$\,ms for $N{=}1600$, metric-dependent), scaling linearly in
+training-set size---ruling it out for latency-sensitive deployment.
+Kernel methods sit at the opposite extreme: the $N\!\times\!N$ solve is
+$O(N^{3})$ in fit and $O(N)$ in predict, with $O(N^{2})$ memory. For
+this dataset ($N{=}1600$) all methods run comfortably, but the scaling
+gap would dominate at $N \gtrsim 10^{4}$: only the parametric linear
+models (LinReg, LogReg, SVM) would remain practical at that scale.
+
+\subsection{Best models per task}
+Table~\ref{tab:final} consolidates the selected configuration and
+held-out test performance for every method; all three required methods
+meet or exceed the handout's sanity-check baselines.
+\textbf{Regression} is essentially a linear problem: ridge LinReg
+(test MSE $0.993$) matches KRR's linear kernel ($0.969$) within
+fold-to-fold noise, so we report the simpler solution; KNN trails at
+$1.62$.
+\textbf{Classification} is tighter: SVM ($\lambda{=}10^{-2}$) achieves
+the best test macro-F1 ($0.713$), a modest $\sim\!0.01$ margin over
+class-weighted LogReg ($0.706$); KLS ($0.619$) and KNN ($0.623$) trail
+by $\sim\!0.1$ F1, driven by poor recall on the 11-sample High test
+minority (Fig.~\ref{fig:cm}). The margin-vs-log-loss difference matters slightly here, but
+both parametric linear classifiers beat the non-parametric and kernel
+alternatives. Across all five methods the story is consistent: the
+signal is near-linear in the 13 z-scored features, so parametric linear
+models win both tasks by small margins, with the remaining bottleneck
+being minority-class recall on the 3.2\% High class---a data problem
+more than a model problem. \textbf{What didn't work:} polynomial/RBF
+expansions, over-regularization (LogReg F1 collapses to $0.513$ at
+$\lambda{=}100$), very small $k$ (KNN F1 $0.58$ at $k{=}1$), and pure
+SGD (F1 $0.655$); the High-class gap (5 vs 4 correct) is one test
+sample and should not be over-interpreted.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\columnwidth]{confusion_matrices.png}
+    \vspace{-0.3cm}
+    \caption{Test-set confusion matrices (row-normalized recall) for the
+    two best classifiers. Both capture Low near-perfectly but struggle
+    on the 11-sample High class.}
+    \label{fig:cm}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Selected configurations and test-set performance.
+Reg: MSE (lower = better); Clf: accuracy, macro-F1 (higher = better).}
+\label{tab:final}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{llll}
+\toprule
+\textbf{Method} & \textbf{Task} & \textbf{Config} & \textbf{Test} \\
+\midrule
+\textbf{LinReg} & reg  & CF ridge $\lambda{=}10$                 & MSE $0.993$ \\
+KRR          & reg  & linear kernel, $\lambda{=}1$            & MSE $0.969$ \\
+KNN          & reg  & $k{=}17$, cos, wtd                      & MSE $1.62$ \\
+\midrule
+LogReg       & clf  & bal.\ weights, $\eta{=}0.3$, $\beta{=}0.9$ & $80.4\%$ / F1 $0.706$ \\
+\textbf{SVM} & clf  & $\lambda{=}10^{-2}$, bs$=64$            & $82.3\%$ / F1 $\mathbf{0.713}$ \\
+KLS          & clf  & poly $d{=}2$, $\lambda{=}1$             & $81.7\%$ / F1 $0.619$ \\
+KNN          & clf  & $k{=}17$, cos, wtd                      & $80.1\%$ / F1 $0.623$ \\
+\bottomrule
+\end{tabular}}
+\end{table}
+
+\end{document}

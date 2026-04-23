@@ -3,17 +3,25 @@ import numpy as np
 
 class KNN(object):
     """
-    kNN classifier object.
+    k-Nearest Neighbors for both classification (majority vote over the k
+    nearest training points) and regression (mean of k nearest targets).
+    Supports L2, L1 and cosine distance, and optional inverse-distance
+    weighting of votes or of the regression mean.
     """
 
     def __init__(self, k=1, task_kind="classification", weighted=False, metric='l2'):
         """
-        Call set_arguments function of this class.
+        Arguments:
+            k (int): number of neighbors.
+            task_kind (str): 'classification' or 'regression'.
+            weighted (bool): False = uniform vote/mean;
+                             True  = inverse-distance weighted.
+            metric (str): 'l2', 'l1', or 'cosine'.
         """
         self.k = k
         self.task_kind = task_kind
-        self.weighted = weighted  # False = uniform vote, True = distance-weighted
-        self.metric = metric      # 'l2', 'l1', 'cosine'
+        self.weighted = weighted
+        self.metric = metric
 
     def fit(self, training_data, training_labels):
         """
@@ -37,13 +45,15 @@ class KNN(object):
             cross    = test_data @ self.training_data.T
             return np.sqrt(np.maximum(sq_test + sq_train - 2 * cross, 0))
 
-        elif self.metric == 'l1':
+        if self.metric == 'l1':
             return np.sum(np.abs(test_data[:, None, :] - self.training_data[None, :, :]), axis=2)
 
-        elif self.metric == 'cosine':
+        if self.metric == 'cosine':
             t  = test_data / (np.linalg.norm(test_data, axis=1, keepdims=True) + 1e-10)
             tr = self.training_data / (np.linalg.norm(self.training_data, axis=1, keepdims=True) + 1e-10)
             return 1 - t @ tr.T
+
+        raise ValueError(f"unknown metric: {self.metric!r}")
 
     def predict(self, test_data):
         """
@@ -65,12 +75,15 @@ class KNN(object):
             weights = np.ones_like(k_dists)
 
         if self.task_kind == "classification":
-            classes     = np.unique(self.training_labels).astype(int)
-            votes       = np.array([
-                (weights * (k_labels == c)).sum(axis=1) for c in classes]).T                                                  # (N_test, C)
-            pred_labels = classes[np.argmax(votes, axis=1)]
+            classes = np.unique(self.training_labels).astype(int)
+            # For each class c, sum weights of neighbors whose label == c.
+            votes = np.stack(
+                [(weights * (k_labels == c)).sum(axis=1) for c in classes],
+                axis=1,
+            )   # (N_test, C)
+            return classes[np.argmax(votes, axis=1)]
 
-        else:  # regression
-            pred_labels = np.sum(weights * k_labels, axis=1) / np.sum(weights, axis=1)
+        if self.task_kind == "regression":
+            return np.sum(weights * k_labels, axis=1) / np.sum(weights, axis=1)
 
-        return pred_labels
+        raise ValueError(f"unknown task_kind: {self.task_kind!r}")

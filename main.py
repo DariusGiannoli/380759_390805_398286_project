@@ -7,22 +7,8 @@ from src.methods.logistic_regression import LogisticRegression
 from src.methods.linear_regression import LinearRegression
 from src.methods.knn import KNN
 from src.utils import normalize_fn
-from src.evaluation import (
-    train_and_evaluate_classification,
-    train_and_evaluate_regression,
-    kfold_cross_validation,
-    stratified_kfold_cross_validation,
-    plot_loss_curve,
-    plot_confusion_matrix,
-    compute_learning_curve, plot_learning_curve,
-    timing_comparison,      plot_timing,
-)
-from src.optimization import (
-    hyperparameter_sweep,   plot_hyperparameter_sweep,
-    ablation_comparison,    plot_ablation,
-    compare_cv_methods,     plot_cv_comparison,
-    tune_linear_regression, tune_logistic_regression, tune_knn,
-)
+from src import evaluation
+from src import optimization
 
 np.random.seed(100)
 
@@ -129,7 +115,7 @@ def run_experiments(train_features, train_labels_classif, train_labels_reg):
     val_size = int(0.2 * N)
     X_tr, y_tr = train_features[:-val_size], train_labels_classif[:-val_size]
     X_val, y_val = train_features[-val_size:], train_labels_classif[-val_size:]
-    m = LogisticRegression(lr=1e-2, max_iters=500, beta=0.9)
+    m = LogisticRegression(lr=0.3, max_iters=1000, beta=0.9)
     m.fit(X_tr, y_tr)
     plot_confusion_matrix(m.predict(X_val), y_val,
                           class_names=['Low', 'Medium', 'High'],
@@ -253,7 +239,8 @@ def main(args):
         test_features        = val_features
         test_labels_reg      = val_labels_reg
         test_labels_classif  = val_labels_classif
-        print(f"Split : {train_size} train / {val_size} val")
+        print(f"Split : {train_size} train / {val_size} val "
+              f"(reporting as 'Test' but this is the validation set; pass --test for real test set)")
     else:
         print("Using full training set -> evaluating on test set")
 

@@ -258,6 +258,97 @@ def compute_confusion_matrix(pred_labels, true_labels, n_classes=None):
     return cm
 
 
+def roc_curve_binary(scores, y_true_binary):
+    """
+    Compute (fpr, tpr) for binary labels y∈{0,1} ranked by `scores` (descending).
+    Returns arrays of length ≤ N+1 starting at (0,0) and ending at (1,1).
+    """
+    order = np.argsort(-scores)
+    y = y_true_binary[order].astype(int)
+    P = max(int(y.sum()), 1)
+    N = max(int((1 - y).sum()), 1)
+    tp = np.cumsum(y)
+    fp = np.cumsum(1 - y)
+    tpr = np.concatenate([[0.0], tp / P])
+    fpr = np.concatenate([[0.0], fp / N])
+    return fpr, tpr
+
+
+def auc_trapezoid(fpr, tpr):
+    """Area under a (fpr, tpr) curve via the trapezoidal rule."""
+    trap = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
+    return float(trap(tpr, fpr))
+
+
+def one_vs_rest_roc(probs, true_labels, class_names=None):
+    """
+    Per-class one-vs-rest ROC curves and AUCs from a (N, C) score matrix.
+    Returns dict {class_name: {'fpr','tpr','auc'}}.
+    """
+    C = probs.shape[1]
+    if class_names is None:
+        class_names = [str(i) for i in range(C)]
+    out = {}
+    for c in range(C):
+        y_bin = (true_labels == c).astype(int)
+        fpr, tpr = roc_curve_binary(probs[:, c], y_bin)
+        out[class_names[c]] = {'fpr': fpr, 'tpr': tpr,
+                               'auc': auc_trapezoid(fpr, tpr)}
+    return out
+
+
+def plot_roc_curves(roc_dict, title="ROC (one-vs-rest)",
+                    save_path="plots/roc.png"):
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        return
+    fig, ax = plt.subplots(figsize=(4.2, 3.6))
+    ax.plot([0, 1], [0, 1], '--', color='gray', linewidth=0.8)
+    for name, m in roc_dict.items():
+        ax.plot(m['fpr'], m['tpr'], label=f"{name}  (AUC={m['auc']:.3f})")
+    ax.set_xlabel("False positive rate")
+    ax.set_ylabel("True positive rate")
+    ax.set_title(title)
+    ax.legend(loc='lower right', fontsize=8)
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=150)
+    plt.close()
+    print(f"ROC curves saved to {save_path}")
+
+
+def per_class_report(pred_labels, true_labels, class_names=None, n_classes=None):
+    """
+    Per-class precision, recall, F1, and support, derived from the confusion matrix.
+    Returns a dict {class_name: {'precision','recall','f1','support'}} and also
+    prints a short aligned table.
+    """
+    cm = compute_confusion_matrix(pred_labels, true_labels, n_classes=n_classes)
+    C  = cm.shape[0]
+    if class_names is None:
+        class_names = [str(i) for i in range(C)]
+
+    out = {}
+    eps = 1e-12
+    for c in range(C):
+        tp = cm[c, c]
+        fp = cm[:, c].sum() - tp
+        fn = cm[c, :].sum() - tp
+        prec = tp / (tp + fp + eps)
+        rec  = tp / (tp + fn + eps)
+        f1   = 2 * prec * rec / (prec + rec + eps)
+        out[class_names[c]] = {'precision': prec, 'recall': rec,
+                               'f1': f1, 'support': int(cm[c, :].sum())}
+
+    print(f"  {'class':<10}{'prec':>8}{'recall':>9}{'F1':>7}{'n':>7}")
+    for name, m in out.items():
+        print(f"  {name:<10}{m['precision']:>8.3f}{m['recall']:>9.3f}"
+              f"{m['f1']:>7.3f}{m['support']:>7d}")
+    macro = np.mean([m['f1'] for m in out.values()])
+    print(f"  {'macro-F1':<10}{'':>8}{'':>9}{macro:>7.3f}")
+    return out
+
+
 def plot_confusion_matrix(pred_labels, true_labels, class_names=None,
                           save_path="plots/confusion_matrix.png"):
     try:

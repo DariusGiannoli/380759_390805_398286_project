@@ -4,14 +4,15 @@ from itertools import combinations_with_replacement
 
 class LinearRegression(object):
     """
-    Linear regression with optional polynomial feature expansion.
+    Ridge-regularized linear regression with optional polynomial feature
+    expansion. The bias term is never regularized.
     """
 
-    def __init__(self, lambda_reg=0, method='closed_form', lr=0.01, max_iters=1000,
-                degree=1, interaction=False):
+    def __init__(self, lambda_reg=0.0, method='closed_form', lr=0.01,
+                 max_iters=1000, degree=1, interaction=False):
         self.lambda_reg = lambda_reg    # L2 regularization strength
         self.method = method            # 'closed_form' or 'gradient_descent'
-        self.lr = lr
+        self.lr = lr                    # learning rate for gradient descent
         self.max_iters = max_iters
         self.degree = degree            # 1 = standard, 2+ = polynomial expansion
         self.interaction = interaction  # False = per-feature powers, True = full cross-terms
@@ -28,15 +29,14 @@ class LinearRegression(object):
         if self.degree == 1:
             return X
 
-        N, D = X.shape
+        D = X.shape[1]
         features = [X]
 
         if self.interaction:
             # Full polynomial: all combinations with replacement up to degree
             for d in range(2, self.degree + 1):
                 for combo in combinations_with_replacement(range(D), d):
-                    new_feat = np.prod(X[:, combo], axis=1, keepdims=True)
-                    features.append(new_feat)
+                    features.append(np.prod(X[:, combo], axis=1, keepdims=True))
         else:
             # Per-feature only: x^2, x^3, ... no cross-terms
             for d in range(2, self.degree + 1):
@@ -54,36 +54,45 @@ class LinearRegression(object):
         Returns:
             pred_labels (np.array): target of shape (N,)
         """
-        N, D = training_data.shape
+        N = training_data.shape[0]
         X_poly = self._expand_features(training_data)
-        D_poly = X_poly.shape[1]
-        X = np.hstack([X_poly, np.ones((N, 1))])
+        X = np.hstack([X_poly, np.ones((N, 1))])  # last column = bias
 
         if self.method == 'closed_form':
-            self._fit_closed_form(X, training_labels, D_poly)
+            self._fit_closed_form(X, training_labels)
         elif self.method == 'gradient_descent':
-            self._fit_gradient_descent(X, training_labels, N, D_poly)
+            self._fit_gradient_descent(X, training_labels)
+        else:
+            raise ValueError(f"unknown method: {self.method!r}")
 
         return X @ self.weights
 
-    def _fit_closed_form(self, X, training_labels, D):
-        """Closed-form solution: w = (XᵀX + λI)⁻¹ Xᵀy"""
-        I = np.eye(D + 1)
-        I[-1, -1] = 0  # don't regularize bias
-        self.weights = np.linalg.solve(X.T @ X + self.lambda_reg * I, X.T @ training_labels)
+    def _fit_closed_form(self, X, y):
+        """Closed-form solution:  w = (XᵀX + λI)⁻¹ Xᵀy  (bias row unregularized)."""
+        reg = np.eye(X.shape[1])
+        reg[-1, -1] = 0.0
+        self.weights = np.linalg.solve(X.T @ X + self.lambda_reg * reg, X.T @ y)
 
-    def _fit_gradient_descent(self, X, training_labels, N, D):
-        """Iterative solution via gradient descent."""
-        self.weights = np.zeros(D + 1)
+    def _fit_gradient_descent(self, X, y):
+        """
+        Iterative solution via gradient descent. Minimizes the same objective
+        as the closed form, ‖Xw − y‖² + λ‖w[:-1]‖², but scaled by 1/N so a
+        moderate learning rate (~1e-2) works for any N. Zeroing the gradient
+        gives (XᵀX + λI)w = Xᵀy, matching the closed-form solution.
+        """
+        N = X.shape[0]
+        self.weights = np.zeros(X.shape[1])
         self.loss_history = []
 
         for _ in range(self.max_iters):
-            preds = X @ self.weights
-            residuals = preds - training_labels
-            grad = (2 / N) * X.T @ residuals
-            grad[:-1] += 2 * self.lambda_reg * self.weights[:-1]  # don't regularize bias
+            residuals = X @ self.weights - y
+            # (scaled) objective at current weights: MSE + (λ/N)·‖w[:-1]‖²
+            mse = np.mean(residuals ** 2)
+            l2  = (self.lambda_reg / N) * np.sum(self.weights[:-1] ** 2)
+            self.loss_history.append(mse + l2)
+            grad = (2.0 / N) * X.T @ residuals
+            grad[:-1] += (2.0 * self.lambda_reg / N) * self.weights[:-1]
             self.weights -= self.lr * grad
-            self.loss_history.append(np.mean(residuals ** 2))
 
     def predict(self, test_data):
         """
