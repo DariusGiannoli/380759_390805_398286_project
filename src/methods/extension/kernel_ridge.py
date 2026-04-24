@@ -32,7 +32,7 @@ def _kernel_matrix(A, B, kernel='rbf', sigma=1.0, degree=2, coef0=1.0):
         sqB = np.sum(B * B, axis=1, keepdims=True).T        # (1,Nb)
         d2  = np.maximum(sqA + sqB - 2.0 * (A @ B.T), 0.0)
         return np.exp(-d2 / (2.0 * sigma ** 2))
-    raise ValueError(f"unknown kernel: {kernel}")
+    raise ValueError(f"kernel {kernel!r} not supported (try linear / poly / rbf)")
 
 
 # --------------------------------------------------------------------------- #

@@ -103,7 +103,7 @@ class LogisticRegression(object):
         elif self.init == 'xavier':
             self.weights = np.random.randn(input_dim, C) * np.sqrt(2.0 / input_dim)
         else:
-            raise ValueError(f"unknown init: {self.init!r}")
+            raise ValueError(f"init must be 'zeros', 'random' or 'xavier'")
 
         velocity = np.zeros_like(self.weights)
         self.loss_history = []

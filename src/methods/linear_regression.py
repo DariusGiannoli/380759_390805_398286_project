@@ -63,7 +63,9 @@ class LinearRegression(object):
         elif self.method == 'gradient_descent':
             self._fit_gradient_descent(X, training_labels)
         else:
-            raise ValueError(f"unknown method: {self.method!r}")
+            raise ValueError(
+                "method must be 'closed_form' or 'gradient_descent'"
+            )
 
         return X @ self.weights
 

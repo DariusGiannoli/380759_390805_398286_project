@@ -1,10 +1,4 @@
-"""
-Model evaluation infrastructure: metrics, CV, diagnostic plots.
-
-This module is responsible for *scoring* a model.
-For hyperparameter optimization (grid search, coarse-to-fine, etc.),
-see optimization.py.
-"""
+"""Metrics, cross-validation, and the LOOCV shortcut for linear regression."""
 
 import time
 import numpy as np
@@ -12,19 +6,9 @@ import numpy as np
 from src.utils import mse_fn, accuracy_fn, macrof1_fn
 
 
-# =============================================================================
-# CORE TRAIN & EVALUATE
-# =============================================================================
-
 def train_and_evaluate_classification(method_obj, train_features, train_labels,
                                        test_features, test_labels):
-    """
-    Fits a classification model, predicts, reports accuracy + F1 + timing.
-
-    Returns:
-        dict with keys: acc_train, f1_train, acc_test, f1_test,
-                        train_time, pred_time
-    """
+    """Fit a classification model, predict, report accuracy + F1 + timing."""
     t0 = time.time()
     preds_train = method_obj.fit(train_features, train_labels)
     train_time  = time.time() - t0
@@ -52,12 +36,7 @@ def train_and_evaluate_classification(method_obj, train_features, train_labels,
 
 def train_and_evaluate_regression(method_obj, train_features, train_labels,
                                    test_features, test_labels):
-    """
-    Fits a regression model, predicts, reports MSE + timing.
-
-    Returns:
-        dict with keys: train_mse, test_mse, train_time, pred_time
-    """
+    """Fit a regression model, predict, report MSE + timing."""
     t0 = time.time()
     preds_train = method_obj.fit(train_features, train_labels)
     train_time  = time.time() - t0
@@ -80,26 +59,14 @@ def train_and_evaluate_regression(method_obj, train_features, train_labels,
                 train_time=train_time, pred_time=pred_time)
 
 
-# =============================================================================
-# SCORING HELPER
-# =============================================================================
-
 def get_score(preds, labels, task):
-    """
-    Returns a scalar score where LOWER is always better.
-        Regression     : MSE
-        Classification : error rate (1 - accuracy)
-    """
+    """Scalar score (lower is better): MSE for regression, error rate for classification."""
     if task == "regression":
         return mse_fn(preds, labels)
     elif task == "classification":
         return 1.0 - accuracy_fn(preds, labels) / 100.0
-    raise ValueError(f"Unknown task: {task}")
+    raise ValueError(f"task must be 'regression' or 'classification', not {task!r}")
 
-
-# =============================================================================
-# K-FOLD CROSS-VALIDATION
-# =============================================================================
 
 def kfold_cross_validation(method_class, method_kwargs_list,
                             features, labels, task, k=5):
@@ -147,16 +114,9 @@ def kfold_cross_validation(method_class, method_kwargs_list,
     return best['kwargs'], results
 
 
-# =============================================================================
-# STRATIFIED K-FOLD (classification only)
-# =============================================================================
-
 def stratified_kfold_cross_validation(method_class, method_kwargs_list,
                                        features, labels, k=5):
-    """
-    Stratified K-Fold CV — preserves class proportions across folds.
-    For classification only.
-    """
+    """Stratified K-Fold CV (classification only) — preserves class proportions in every fold."""
     print(f"\n--- Stratified {k}-Fold CV ({len(method_kwargs_list)} configs) ---")
 
     classes = np.unique(labels)
@@ -192,17 +152,11 @@ def stratified_kfold_cross_validation(method_class, method_kwargs_list,
     return best['kwargs'], results
 
 
-# =============================================================================
-# LOOCV SHORTCUT (linear regression only)
-# =============================================================================
-
 def loocv_linear_regression(features, labels, lambda_reg):
     """
-    Exact LOOCV for linear regression using the hat matrix shortcut.
+    Exact LOOCV for ridge linear regression using the hat matrix shortcut:
+    LOO_error_i = residual_i / (1 - H_ii), where H = X(XᵀX + λI)⁻¹Xᵀ.
     Cost: one fit + O(N²).
-
-    Formula:  LOO_error_i = residual_i / (1 - H_ii)
-    where H = X(XᵀX + λI)⁻¹Xᵀ  is the hat matrix.
     """
     N, D = features.shape
     X    = np.hstack([features, np.ones((N, 1))])
@@ -218,305 +172,3 @@ def loocv_linear_regression(features, labels, lambda_reg):
     h_diag  = np.diag(H)
     loo_err = residuals / (1 - h_diag)
     return float(np.mean(loo_err ** 2))
-
-
-# =============================================================================
-# DIAGNOSTIC PLOT: loss curve
-# =============================================================================
-
-def plot_loss_curve(loss_history, save_path="plots/loss_curve.png"):
-    """Plots gradient descent convergence curve."""
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not available, skipping plot.")
-        return
-
-    plt.figure(figsize=(7, 4))
-    plt.plot(loss_history)
-    plt.xlabel("Iteration")
-    plt.ylabel("Loss")
-    plt.title("Gradient descent convergence")
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"Loss curve saved to {save_path}")
-
-
-# =============================================================================
-# CONFUSION MATRIX (classification)
-# =============================================================================
-
-def compute_confusion_matrix(pred_labels, true_labels, n_classes=None):
-    """Rows = true class, columns = predicted class."""
-    if n_classes is None:
-        n_classes = int(max(pred_labels.max(), true_labels.max())) + 1
-
-    cm = np.zeros((n_classes, n_classes), dtype=int)
-    for t, p in zip(true_labels.astype(int), pred_labels.astype(int)):
-        cm[t, p] += 1
-    return cm
-
-
-def roc_curve_binary(scores, y_true_binary):
-    """
-    Compute (fpr, tpr) for binary labels y∈{0,1} ranked by `scores` (descending).
-    Returns arrays of length ≤ N+1 starting at (0,0) and ending at (1,1).
-    """
-    order = np.argsort(-scores)
-    y = y_true_binary[order].astype(int)
-    P = max(int(y.sum()), 1)
-    N = max(int((1 - y).sum()), 1)
-    tp = np.cumsum(y)
-    fp = np.cumsum(1 - y)
-    tpr = np.concatenate([[0.0], tp / P])
-    fpr = np.concatenate([[0.0], fp / N])
-    return fpr, tpr
-
-
-def auc_trapezoid(fpr, tpr):
-    """Area under a (fpr, tpr) curve via the trapezoidal rule."""
-    trap = getattr(np, 'trapezoid', getattr(np, 'trapz', None))
-    return float(trap(tpr, fpr))
-
-
-def one_vs_rest_roc(probs, true_labels, class_names=None):
-    """
-    Per-class one-vs-rest ROC curves and AUCs from a (N, C) score matrix.
-    Returns dict {class_name: {'fpr','tpr','auc'}}.
-    """
-    C = probs.shape[1]
-    if class_names is None:
-        class_names = [str(i) for i in range(C)]
-    out = {}
-    for c in range(C):
-        y_bin = (true_labels == c).astype(int)
-        fpr, tpr = roc_curve_binary(probs[:, c], y_bin)
-        out[class_names[c]] = {'fpr': fpr, 'tpr': tpr,
-                               'auc': auc_trapezoid(fpr, tpr)}
-    return out
-
-
-def plot_roc_curves(roc_dict, title="ROC (one-vs-rest)",
-                    save_path="plots/roc.png"):
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        return
-    fig, ax = plt.subplots(figsize=(4.2, 3.6))
-    ax.plot([0, 1], [0, 1], '--', color='gray', linewidth=0.8)
-    for name, m in roc_dict.items():
-        ax.plot(m['fpr'], m['tpr'], label=f"{name}  (AUC={m['auc']:.3f})")
-    ax.set_xlabel("False positive rate")
-    ax.set_ylabel("True positive rate")
-    ax.set_title(title)
-    ax.legend(loc='lower right', fontsize=8)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"ROC curves saved to {save_path}")
-
-
-def per_class_report(pred_labels, true_labels, class_names=None, n_classes=None):
-    """
-    Per-class precision, recall, F1, and support, derived from the confusion matrix.
-    Returns a dict {class_name: {'precision','recall','f1','support'}} and also
-    prints a short aligned table.
-    """
-    cm = compute_confusion_matrix(pred_labels, true_labels, n_classes=n_classes)
-    C  = cm.shape[0]
-    if class_names is None:
-        class_names = [str(i) for i in range(C)]
-
-    out = {}
-    eps = 1e-12
-    for c in range(C):
-        tp = cm[c, c]
-        fp = cm[:, c].sum() - tp
-        fn = cm[c, :].sum() - tp
-        prec = tp / (tp + fp + eps)
-        rec  = tp / (tp + fn + eps)
-        f1   = 2 * prec * rec / (prec + rec + eps)
-        out[class_names[c]] = {'precision': prec, 'recall': rec,
-                               'f1': f1, 'support': int(cm[c, :].sum())}
-
-    print(f"  {'class':<10}{'prec':>8}{'recall':>9}{'F1':>7}{'n':>7}")
-    for name, m in out.items():
-        print(f"  {name:<10}{m['precision']:>8.3f}{m['recall']:>9.3f}"
-              f"{m['f1']:>7.3f}{m['support']:>7d}")
-    macro = np.mean([m['f1'] for m in out.values()])
-    print(f"  {'macro-F1':<10}{'':>8}{'':>9}{macro:>7.3f}")
-    return out
-
-
-def plot_confusion_matrix(pred_labels, true_labels, class_names=None,
-                          save_path="plots/confusion_matrix.png"):
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not available, skipping plot.")
-        return
-
-    cm = compute_confusion_matrix(pred_labels, true_labels)
-    C  = cm.shape[0]
-    if class_names is None:
-        class_names = [str(i) for i in range(C)]
-
-    fig, ax = plt.subplots(figsize=(5, 4))
-    im = ax.imshow(cm, cmap='Blues')
-    plt.colorbar(im, ax=ax)
-
-    ax.set_xticks(range(C))
-    ax.set_yticks(range(C))
-    ax.set_xticklabels(class_names)
-    ax.set_yticklabels(class_names)
-    ax.set_xlabel("Predicted")
-    ax.set_ylabel("True")
-    ax.set_title("Confusion matrix")
-
-    for i in range(C):
-        for j in range(C):
-            color = "white" if cm[i, j] > cm.max() / 2 else "black"
-            ax.text(j, i, str(cm[i, j]), ha='center', va='center', color=color)
-
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"Confusion matrix saved to {save_path}")
-    return cm
-
-
-# =============================================================================
-# LEARNING CURVES
-# =============================================================================
-
-def compute_learning_curve(method_class, method_kwargs, features, labels, task,
-                           sizes=None, n_repeats=3):
-    """
-    Computes train/val scores as a function of training set size.
-    Uses an internal 80/20 split, averaged across n_repeats shuffles.
-    """
-    N = len(features)
-    val_size   = int(0.2 * N)
-    train_pool = N - val_size
-
-    if sizes is None:
-        sizes = np.linspace(50, train_pool, 10, dtype=int)
-
-    train_scores = {s: [] for s in sizes}
-    val_scores   = {s: [] for s in sizes}
-
-    for rep in range(n_repeats):
-        rng = np.random.RandomState(rep)
-        perm = rng.permutation(N)
-        X_tr_all, y_tr_all = features[perm[:train_pool]], labels[perm[:train_pool]]
-        X_val,    y_val    = features[perm[train_pool:]], labels[perm[train_pool:]]
-
-        for s in sizes:
-            X_sub, y_sub = X_tr_all[:s], y_tr_all[:s]
-            model = method_class(**method_kwargs)
-            model.fit(X_sub, y_sub)
-            train_scores[s].append(get_score(model.predict(X_sub), y_sub, task))
-            val_scores[s].append(get_score(model.predict(X_val), y_val, task))
-
-    return dict(
-        sizes=np.array(sizes),
-        train_mean=np.array([np.mean(train_scores[s]) for s in sizes]),
-        train_std =np.array([np.std (train_scores[s]) for s in sizes]),
-        val_mean  =np.array([np.mean(val_scores[s])   for s in sizes]),
-        val_std   =np.array([np.std (val_scores[s])   for s in sizes]),
-    )
-
-
-def plot_learning_curve(lc_results, task, title="Learning curve",
-                        save_path="plots/learning_curve.png"):
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not available, skipping plot.")
-        return
-
-    sizes = lc_results['sizes']
-    ylab  = "MSE" if task == "regression" else "Error rate (1 - acc)"
-
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.plot(sizes, lc_results['train_mean'], marker='o', label='Train')
-    ax.fill_between(sizes,
-                    lc_results['train_mean'] - lc_results['train_std'],
-                    lc_results['train_mean'] + lc_results['train_std'], alpha=0.2)
-    ax.plot(sizes, lc_results['val_mean'], marker='s', label='Validation')
-    ax.fill_between(sizes,
-                    lc_results['val_mean'] - lc_results['val_std'],
-                    lc_results['val_mean'] + lc_results['val_std'], alpha=0.2)
-
-    ax.set_xlabel("Training set size")
-    ax.set_ylabel(ylab)
-    ax.set_title(title)
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"Learning curve saved to {save_path}")
-
-
-# =============================================================================
-# TIMING MEASUREMENT
-# =============================================================================
-
-def timing_comparison(method_class, method_kwargs, features, labels,
-                      sizes=None, n_repeats=3):
-    """Measures train and predict time as a function of training set size."""
-    N = len(features)
-    if sizes is None:
-        sizes = np.linspace(100, N, 8, dtype=int)
-
-    train_times = {s: [] for s in sizes}
-    pred_times  = {s: [] for s in sizes}
-
-    for rep in range(n_repeats):
-        rng  = np.random.RandomState(rep)
-        perm = rng.permutation(N)
-
-        for s in sizes:
-            X_sub, y_sub = features[perm[:s]], labels[perm[:s]]
-            model = method_class(**method_kwargs)
-
-            t0 = time.time()
-            model.fit(X_sub, y_sub)
-            train_times[s].append(time.time() - t0)
-
-            t0 = time.time()
-            model.predict(X_sub)
-            pred_times[s].append(time.time() - t0)
-
-    return dict(
-        sizes=np.array(sizes),
-        train_mean=np.array([np.mean(train_times[s]) for s in sizes]),
-        train_std =np.array([np.std (train_times[s]) for s in sizes]),
-        pred_mean =np.array([np.mean(pred_times[s])  for s in sizes]),
-        pred_std  =np.array([np.std (pred_times[s])  for s in sizes]),
-    )
-
-
-def plot_timing(timing_results, title="Timing scaling",
-                save_path="plots/timing.png"):
-    try:
-        import matplotlib.pyplot as plt
-    except ImportError:
-        print("matplotlib not available, skipping plot.")
-        return
-
-    s = timing_results['sizes']
-    fig, ax = plt.subplots(figsize=(7, 4))
-    ax.errorbar(s, timing_results['train_mean'], yerr=timing_results['train_std'],
-                marker='o', capsize=4, label='Train')
-    ax.errorbar(s, timing_results['pred_mean'], yerr=timing_results['pred_std'],
-                marker='s', capsize=4, label='Predict')
-    ax.set_xlabel("Training set size")
-    ax.set_ylabel("Time (s)")
-    ax.set_title(title)
-    ax.legend()
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150)
-    plt.close()
-    print(f"Timing plot saved to {save_path}")

@@ -53,7 +53,9 @@ class KNN(object):
             tr = self.training_data / (np.linalg.norm(self.training_data, axis=1, keepdims=True) + 1e-10)
             return 1 - t @ tr.T
 
-        raise ValueError(f"unknown metric: {self.metric!r}")
+        raise ValueError(
+            f"metric must be one of 'l2', 'l1', 'cosine' (got {self.metric!r})"
+        )
 
     def predict(self, test_data):
         """
@@ -86,4 +88,4 @@ class KNN(object):
         if self.task_kind == "regression":
             return np.sum(weights * k_labels, axis=1) / np.sum(weights, axis=1)
 
-        raise ValueError(f"unknown task_kind: {self.task_kind!r}")
+        raise ValueError(f"task_kind should be 'classification' or 'regression'")
