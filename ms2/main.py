@@ -102,6 +102,9 @@ def main(args):
         hidden_dims = [int(h) for h in args.hidden_dims.split(",") if h.strip()]
         act_name = args.activation.lower()
         hidden_act = ReLU if act_name == "relu" else Sigmoid
+        learning_rate = args.lr
+        if learning_rate is None:
+            learning_rate = 3e-4 if args.task == "regression" else 3e-3
 
         if args.task == "classification":
             C = get_n_classes(train_labels_classif)
@@ -115,7 +118,7 @@ def main(args):
         # Stash MLP-specific knobs so the train block below can read them.
         method_obj._epochs        = args.epochs
         method_obj._batch_size    = args.batch_size
-        method_obj._learning_rate = args.lr
+        method_obj._learning_rate = learning_rate
         method_obj._beta          = args.beta
     else:
         raise ValueError(f"Unknown method: {args.method}")
@@ -229,19 +232,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--K",
         type=int,
-        default=1,
+        default=50,
         help="number of clusters datapoints used for kmeans",
     )
     parser.add_argument(
         "--lr",
         type=float,
-        default=1e-3,
-        help="learning rate for methods with learning rate",
+        default=None,
+        help="learning rate for MLP (default: 3e-3 for classification, 3e-4 for regression)",
     )
     parser.add_argument(
         "--max_iters",
         type=int,
-        default=100,
+        default=200,
         help="max iters for methods which are iterative",
     )
     parser.add_argument(
@@ -267,7 +270,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=50,
+        default=40,
         help="number of training epochs for MLP",
     )
     parser.add_argument(
