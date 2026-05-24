@@ -48,16 +48,17 @@ def main(args):
     ## 2. Then we must prepare it. This is where you can create a validation set,
     #  normalize, add bias, etc.
 
+    # Shuffle the training data with a fixed RandomState to avoid leakage from
+    # any latent ordering (MS1 feedback). Done in both --test and val modes so
+    # the mini-batch compositions during SGD are identical in either path.
+    rs = np.random.RandomState(0)
+    perm = rs.permutation(len(train_features))
+    train_features       = train_features[perm]
+    train_labels_reg     = train_labels_reg[perm]
+    train_labels_classif = train_labels_classif[perm]
+
     # Make a validation set (it can overwrite xtest, ytest)
     if not args.test:
-        # Shuffle BEFORE splitting to avoid leakage if the dataset is ordered
-        # (MS1 feedback). RandomState is local so the global seed is preserved.
-        rs = np.random.RandomState(0)
-        perm = rs.permutation(len(train_features))
-        train_features       = train_features[perm]
-        train_labels_reg     = train_labels_reg[perm]
-        train_labels_classif = train_labels_classif[perm]
-
         val_size   = int(0.2 * len(train_features))
         train_size = len(train_features) - val_size
 
@@ -91,7 +92,10 @@ def main(args):
         method_obj = DummyClassifier(arg1=1, arg2=2)
 
     elif args.method == "kmeans":
-        method_obj = KMeans(K=args.K, max_iters=args.max_iters)
+        method_obj = KMeans(
+            K=args.K, max_iters=args.max_iters,
+            init=args.kmeans_init, n_restarts=args.kmeans_restarts,
+        )
 
     elif args.method == "mlp":
         D = train_features.shape[1]
@@ -112,6 +116,7 @@ def main(args):
         method_obj._epochs        = args.epochs
         method_obj._batch_size    = args.batch_size
         method_obj._learning_rate = args.lr
+        method_obj._beta          = args.beta
     else:
         raise ValueError(f"Unknown method: {args.method}")
 
@@ -134,6 +139,7 @@ def main(args):
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
+                beta=method_obj._beta,
             )
             preds_train = onehot_to_label(method_obj.predict(train_features))
         else:
@@ -173,6 +179,7 @@ def main(args):
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
+                beta=method_obj._beta,
             )
             preds_train = method_obj.predict(train_features).ravel()
         else:
@@ -274,6 +281,26 @@ if __name__ == "__main__":
         type=str,
         default="ce",
         help="loss for MLP classification: ce (cross-entropy) / mse",
+    )
+    parser.add_argument(
+        "--beta",
+        type=float,
+        default=0.9,
+        help="momentum coefficient for MLP (0.0 = vanilla SGD)",
+    )
+
+    # K-Means-specific arguments
+    parser.add_argument(
+        "--kmeans_init",
+        type=str,
+        default="kmeans++",
+        help="K-Means init: 'random' or 'kmeans++'",
+    )
+    parser.add_argument(
+        "--kmeans_restarts",
+        type=int,
+        default=10,
+        help="number of K-Means random restarts (keeps best-inertia)",
     )
 
     args = parser.parse_args()

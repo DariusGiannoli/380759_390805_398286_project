@@ -8,7 +8,7 @@ class KMeans(object):
     We also use it to make prediction by attributing labels to clusters.
     """
 
-    def __init__(self, K, max_iters=100):
+    def __init__(self, K, max_iters=100, init='random', n_restarts=1):
         """
         Initialize the new object (see dummy_methods.py)
         and set its arguments.
@@ -16,11 +16,18 @@ class KMeans(object):
         Arguments:
             K (int): number of clusters
             max_iters (int): maximum number of iterations
+            init (str): 'random' picks K data points uniformly; 'kmeans++'
+                        uses the D^2-weighted seeding of Arthur & Vassilvitskii.
+            n_restarts (int): number of independent runs; keeps the one with
+                              the lowest within-cluster sum of squares (inertia).
         """
         self.K = int(K)
         self.max_iters = int(max_iters)
+        self.init = init
+        self.n_restarts = max(1, int(n_restarts))
         self.centers = None
         self.cluster_center_label = None
+        self.inertia_ = None
 
     def init_centers(self, data):
         """
@@ -32,9 +39,33 @@ class KMeans(object):
         Returns:
             centers: array of shape (KxD) of initial cluster centers
         """
+        if self.init == 'kmeans++':
+            return self._init_centers_kmeanspp(data)
         N = data.shape[0]
         idx = np.random.choice(N, size=self.K, replace=(self.K > N))
         return data[idx].copy()
+
+    def _init_centers_kmeanspp(self, data):
+        """K-means++ seeding: each new center is sampled with probability
+        proportional to its squared distance to the nearest existing center."""
+        N, D = data.shape
+        centers = np.empty((self.K, D))
+        first = np.random.randint(N)
+        centers[0] = data[first]
+        # Maintain min squared distance from each point to nearest chosen center.
+        sq_min = np.sum((data - centers[0]) ** 2, axis=1)
+        for k in range(1, self.K):
+            total = sq_min.sum()
+            if total <= 0:
+                # Degenerate: all points coincide with chosen centers.
+                centers[k] = data[np.random.randint(N)]
+            else:
+                probs = sq_min / total
+                idx = np.random.choice(N, p=probs)
+                centers[k] = data[idx]
+            sq_new = np.sum((data - centers[k]) ** 2, axis=1)
+            sq_min = np.minimum(sq_min, sq_new)
+        return centers
 
     def compute_distance(self, data, centers):
         """
@@ -87,17 +118,12 @@ class KMeans(object):
                 new_centers[k] = data[np.random.randint(data.shape[0])]
         return new_centers
 
-    def k_means(self, data, max_iter=100):
-        """
-        Main K-Means algorithm that performs clustering of the data.
+    def _compute_inertia(self, data, centers, cluster_assignments):
+        """Sum of squared distances of each point to its assigned center."""
+        chosen = centers[cluster_assignments]
+        return float(np.sum((data - chosen) ** 2))
 
-        Arguments:
-            data (array): shape (N,D) where N is the number of data samples, D is number of features.
-            max_iter (int): the maximum number of iterations
-        Returns:
-            centers (array): shape (K,D), the final cluster centers.
-            cluster_assignments (array): shape (N,) final cluster assignment for each data point.
-        """
+    def _k_means_single_run(self, data, max_iter):
         centers = self.init_centers(data)
         cluster_assignments = np.zeros(data.shape[0], dtype=int)
         for _ in range(int(max_iter)):
@@ -109,6 +135,33 @@ class KMeans(object):
                 break
             centers = new_centers
         return centers, cluster_assignments
+
+    def k_means(self, data, max_iter=100):
+        """
+        Main K-Means algorithm that performs clustering of the data.
+
+        Runs n_restarts independent restarts and keeps the one with the
+        lowest within-cluster sum of squares.
+
+        Arguments:
+            data (array): shape (N,D) where N is the number of data samples, D is number of features.
+            max_iter (int): the maximum number of iterations
+        Returns:
+            centers (array): shape (K,D), the final cluster centers.
+            cluster_assignments (array): shape (N,) final cluster assignment for each data point.
+        """
+        best_centers = None
+        best_assignments = None
+        best_inertia = np.inf
+        for _ in range(self.n_restarts):
+            centers, assignments = self._k_means_single_run(data, max_iter)
+            inertia = self._compute_inertia(data, centers, assignments)
+            if inertia < best_inertia:
+                best_inertia = inertia
+                best_centers = centers
+                best_assignments = assignments
+        self.inertia_ = best_inertia
+        return best_centers, best_assignments
 
     def assign_labels_to_centers(self, centers, cluster_assignments, true_labels):
         """

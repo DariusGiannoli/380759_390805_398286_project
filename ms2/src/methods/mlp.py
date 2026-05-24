@@ -86,17 +86,28 @@ class MLP:
 
     def update_w_b(self, index, dw, delta):
         """
-        Update weights and biases of a single layer using the gradients.
+        Update weights and biases of a single layer with optional heavy-ball
+        momentum. Velocities are persisted on the object so successive calls
+        accumulate them across mini-batches.
+
         :param index: (int) layer number (1..L)
         :param dw: (array) gradient w.r.t. W[index]
         :param delta: (array) gradient w.r.t. b[index]
         """
-        self.W[index] -= self.lr * dw
-        self.b[index] -= self.lr * delta
+        if self.beta > 0.0:
+            self.vW[index] = self.beta * self.vW[index] + dw
+            self.vb[index] = self.beta * self.vb[index] + delta
+            self.W[index] -= self.lr * self.vW[index]
+            self.b[index] -= self.lr * self.vb[index]
+        else:
+            self.W[index] -= self.lr * dw
+            self.b[index] -= self.lr * delta
 
-    def fit(self, x, y_true, loss, epochs, batch_size, learning_rate=1e-3):
+    def fit(self, x, y_true, loss, epochs, batch_size, learning_rate=1e-3,
+            beta=0.0, track_loss=False):
         """
-        Train the model with mini-batch SGD.
+        Train the model with mini-batch SGD, optionally with heavy-ball
+        momentum.
 
         :param x: (array) inputs, shape (N, D)
         :param y_true: (array) one-hot/target labels, shape (N, C)
@@ -104,8 +115,16 @@ class MLP:
         :param epochs: (int) number of full passes over the data
         :param batch_size: (int) mini-batch size
         :param learning_rate: (float) SGD step size
+        :param beta: (float) momentum coefficient (0.0 = vanilla SGD)
+        :param track_loss: (bool) if True, store per-epoch training loss in
+                           self.loss_history (cheap on this dataset).
         """
         self.lr = learning_rate
+        self.beta = float(beta)
+        self.vW = {l: np.zeros_like(self.W[l]) for l in range(1, self.L + 1)}
+        self.vb = {l: np.zeros_like(self.b[l]) for l in range(1, self.L + 1)}
+        self.loss_history = []
+
         N = x.shape[0]
         bs = max(1, min(int(batch_size), N))
 
@@ -120,5 +139,8 @@ class MLP:
                 dW, db = self.back_prop(z, a, y_batch, loss)
                 for l in range(1, self.L + 1):
                     self.update_w_b(l, dW[l], db[l])
+
+            if track_loss:
+                self.loss_history.append(loss.loss(y_true, self.predict(x)))
 
         return self.predict(x)
