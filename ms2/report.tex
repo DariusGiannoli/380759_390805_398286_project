@@ -80,21 +80,28 @@ gradient vanishing.
 
 \emph{Hyperparameter sweeps.} We swept the learning rate $\eta$ on a
 log grid from $10^{-4}$ to $10^{-1}$ (Fig.~\ref{fig:mlp_lr}) and six
-hidden architectures ranging from $(32)$ to $(128,\,64,\,32)$
+hidden architectures from $(32)$ to $(128,\,64,\,32)$
 (Fig.~\ref{fig:mlp_arch}). The lr curve is sharply peaked: F1 collapses
 for $\eta\!\lesssim\!10^{-3}$ (too few effective steps in $40$ epochs)
 and degrades mildly for $\eta\!\geq\!10^{-2}$ (noisier updates), with
-the best CV F1 at $\eta{=}3{\cdot}10^{-3}$. The architecture sweep is
-flat within fold std, mirroring the MS1 finding that the signal is
-near-linear in the $13$ z-scored features: adding width or depth does
-not unlock usable non-linearity. We therefore select the smallest
-network --- one hidden layer of $32$ ReLU units --- as the simpler
-solution.
+the best CV F1 at $\eta{=}3{\cdot}10^{-3}$. The architecture sweep
+shows a real but moderate effect: single-layer nets cluster around CV
+F1 $0.70$ and the two-layer $(64,32)$ wins at $\mathbf{0.744}$, with
+the three-layer $(128,64,32)$ dropping back to $0.72$ (harder to
+optimise in $40$ epochs). The signal is therefore mostly linear, but
+one extra hidden layer buys a small genuine gain. We select $(64,32)$.
 
-\emph{Selected configuration.} One hidden layer of $32$ ReLU units,
+\emph{Selected configuration.} Hidden layers $(64,32)$ ReLU,
 $\eta{=}3{\cdot}10^{-3}$, momentum $\beta{=}0.9$, batch size $32$,
-$40$ epochs. The selected model converges smoothly to a final-epoch
-validation CE of $0.33$.
+$40$ epochs (CE+Softmax for classification, MSE+Identity for
+regression).
+
+\emph{Ablations} (5-fold CV F1 around the selected config). Three
+knobs are cliffs: momentum (F1 $0.48/0.56/0.74$ for
+$\beta{=}0/0.5/0.9$), activation (Sigmoid $0.51$ vs ReLU $0.69$),
+and training budget (epochs~$10$: $0.54$; batch~$128$: $0.55$ ---
+both under-train in $40$ epochs). Two knobs are within fold noise:
+CE vs MSE-on-onehot ($0.71$ vs $0.73$) and bs~$8$ vs $32$.
 
 \begin{figure}[h!]
     \centering
@@ -105,7 +112,7 @@ validation CE of $0.33$.
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/mlp_arch.png}
-        \caption{Hidden-layer architecture; flat within fold noise.}
+        \caption{Hidden-layer architecture; $(64,32)$ peaks.}
         \label{fig:mlp_arch}
     \end{subfigure}
     \caption{MLP sweeps (5-fold stratified CV macro-F1, error bars are
@@ -127,25 +134,27 @@ lowest-inertia run out of $N$).
 
 \emph{Choosing $K$.} The number of clusters $K$ controls a strong
 tension on this dataset (Fig.~\ref{fig:km_k}). Inertia decreases
-
-monotonically with $K$ (no clear elbow), but \emph{F1} keeps rising
-up to $K{=}30$ then degrades at $K{=}50$. The reason is class
-imbalance: with $K{=}3$ a majority vote inside each cluster collapses
-to the global majority (Low), giving accuracy~${\approx}70\%$ but
-macro-F1~$0.27$. Increasing $K$ creates smaller, locally purer
-clusters where Medium and High samples can dominate, lifting
-minority-class recall. We select $K{=}30$. \begin{figure}[h!]
+monotonically with $K$ (no clear elbow), and \emph{F1} keeps rising
+across the whole sweep, peaking at $K{=}50$ (CV F1 $0.55$). The
+reason is class imbalance: with $K{=}3$ a majority vote inside each
+cluster collapses to the global majority (Low), giving
+accuracy~${\approx}71\%$ but macro-F1~$0.31$. Increasing $K$ creates
+smaller, locally purer clusters where Medium and High samples can
+dominate, lifting minority-class recall. We select $K{=}50$ (largest
+$K$ on the grid that still leaves each cluster $\gtrsim\!25$ training
+points, avoiding a memorisation regime).
+\begin{figure}[h!]
     \centering
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/kmeans_k.png}
         \caption{$K$ sweep: CV macro-F1 (red) and normalised inertia
-        (grey). Inertia elbow ($K{\approx}15$) disagrees with F1
-        peak ($K{=}30$).}
+        (grey). F1 keeps rising over the swept range; selected
+        $K{=}50$.}
         \label{fig:km_k}
     \end{subfigure}\hfill
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/kmeans_init.png}
-        \caption{Init strategy at $K{=}30$, $20$ seeds each: better
+        \caption{Init strategy at $K{=}50$, $20$ seeds each: better
         inertia does \emph{not} translate to better F1.}
         \label{fig:km_init}
     \end{subfigure}
@@ -153,13 +162,14 @@ minority-class recall. We select $K{=}30$. \begin{figure}[h!]
     \label{fig:km}
 \end{figure}
 
-\emph{Initialisation does not matter for F1.}
-Fig.~\ref{fig:km_init} sweeps four init strategies at $K{=}30$
-($20$ seeds each): K-Means++ and best-of-$10$ restarts cut inertia
-variance ($\sigma{\approx}17$ vs $\sigma{\approx}46$ for plain random)
-but all four land within $0.03$~F1 of one another, inside the
-seed-to-seed std ($\sim\!0.07$). The K-Means inertia objective and
-the downstream voting objective are not aligned on imbalanced classes.
+\emph{Restarts cut variance; K-Means++ alone does not help.}
+Sweeping four init strategies at $K{=}50$ ($20$ seeds each,
+Fig.~\ref{fig:km_init}): K-Means++ alone neither lowers inertia
+($\bar{I}{=}8571$ vs random $8543$) nor F1 ($0.57$ vs $0.59$);
+ten restarts do the real work (inertia $\sigma$: $27{\to}16$ with
+km++${\times}10$). All four mean F1s land within $\sim\!0.03$ of
+each other --- inside the seed-to-seed std --- so the inertia and
+voting objectives are misaligned on imbalanced data.
 
 
 
@@ -172,12 +182,11 @@ selected MS1 and MS2 model on the same held-out test set. Three
 take-aways stand out.
 
 
-\emph{MLP beats every MS1 classifier.} On classification, the small
-MLP reaches test macro-F1 $\mathbf{0.798}$, a clear $+0.07$ over MS1's
-best (Linear SVM at $0.733$). This contradicts the surface reading of
-the MS1 conclusion that the signal is near-linear. The two
-observations reconcile if one looks at \emph{where} the gain comes
-from: MS1 already noted that minority-class recall was the bottleneck. \begin{figure}[h!]
+\emph{MLP beats every MS1 classifier.} On classification, the MLP
+reaches test macro-F1 $\mathbf{0.778}$, a clear $+0.045$ over MS1's
+best (Linear SVM at $0.733$). This refines, rather than contradicts,
+the MS1 conclusion that the signal is near-linear: one extra hidden
+layer plus class-aware Softmax+CE buys a real but bounded gain. \begin{figure}[h!]
     \centering
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/comparison_clf.png}
@@ -206,60 +215,60 @@ MLP--K-Means F1 gap is concentrated on the Medium class.}
 \textbf{Method} & \textbf{Class} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} \\
 \midrule
 \multirow{3}{*}{MLP}
-        & Low    & $0.89$ & $0.94$ & $0.91$ \\
-        & Medium & $0.77$ & $0.69$ & $0.73$ \\
-        & High   & $0.82$ & $0.69$ & $0.75$ \\
+        & Low    & $0.91$ & $0.92$ & $0.91$ \\
+        & Medium & $0.75$ & $0.71$ & $0.73$ \\
+        & High   & $0.69$ & $0.69$ & $0.69$ \\
 \midrule
 \multirow{3}{*}{K-Means}
-        & Low    & $0.76$ & $0.94$ & $0.84$ \\
-        & Medium & $0.47$ & $0.16$ & $0.24$ \\
-        & High   & $0.65$ & $0.85$ & $0.73$ \\
+        & Low    & $0.78$ & $0.96$ & $0.86$ \\
+        & Medium & $0.62$ & $0.27$ & $0.38$ \\
+        & High   & $0.88$ & $0.54$ & $0.67$ \\
 \bottomrule
 \end{tabular}
 \end{table}
-The MLP's Softmax+CE combination, trained with class-aware
-back-propagation, fits a smoother probability surface in the High
-neighbourhood than the hinge-loss SVM. The architecture sweep
-(Fig.~\ref{fig:mlp_arch}) shows the MLP does \emph{not} use width or depth
-for new non-linear features --- those plateau within fold noise ---
-so the residual signal it picks up is loss-driven, not
-representation-driven.
+The gain over SVM lands on the minority classes (per-class F1 in
+Table~\ref{tab:per_class}, especially High) --- exactly the
+bottleneck MS1 flagged. The architecture sweep attributes $+0.04$
+CV F1 to the extra hidden layer; the ablation attributes the rest
+to momentum and training time, with loss choice within noise.
 
-\emph{MLP regression matches ridge within noise.} For regression,
-the MLP gives test MSE $1.101$ vs MS1's closed-form ridge ($0.993$);
-the gap is within the fold-to-fold variation observed during CV.
-Without a structural non-linearity to exploit, the more flexible model
-carries no advantage over a $14$-parameter ridge that was already
-optimal on this data.
+\emph{MLP regression matches ridge within noise.} A separate $\eta$
+sweep on the regression task bottoms out at $\eta{=}3{\cdot}10^{-4}$
+(CV MSE $1.13$ vs $1.33$ at the classification-best $3{\cdot}10^{-3}$);
+with this task-specific $\eta$ the MLP gives test MSE
+$\mathbf{1.027}$ vs ridge ($0.993$) --- a $0.034$ gap, within the
+$\sim\!0.11$ fold std. K-Means could be turned into a regressor
+(mean cluster target), but matching ridge on a continuous target
+would need $K{\gg}50$ and is outside scope.
 
 \emph{K-Means is comparable to $k$-NN but well below parametric
-methods.} The voting classifier achieves test F1 $0.603$, within
-$0.02$ of MS1's $k$-NN ($0.623$) --- inside the $\sim\!0.08$
-seed-to-seed std (Fig.~\ref{fig:km_init}) --- but $0.19$ below the
-MLP. The confusion matrices (Fig.~\ref{fig:cm}) localise the gap:
-K-Means catches Low (recall $0.94$) and High ($0.85$) acceptably but
-\emph{collapses on Medium} ($0.16$; $84/107$ Medium samples voted as
-Low), while the MLP is balanced across all three classes
-($0.94/0.69/0.69$). The
-MLP--K-Means gap is essentially a Medium-class story: unsupervised
-partitioning does not align with class boundaries on imbalanced data.
+methods.} The voting classifier reaches test F1 $0.634$, marginally
+above MS1's $k$-NN ($0.623$) but inside the $\sim\!0.07$ seed std
+(Fig.~\ref{fig:km_init}), and $0.14$ below the MLP. The confusion
+matrices (Fig.~\ref{fig:cm}) localise the gap: K-Means handles Low
+(recall $0.96$) and even captures High at high precision
+($0.88$, recall $0.54$) but \emph{collapses on Medium} (recall
+$0.27$, F1 $0.38$): $63/107$ Medium samples are voted as Low.
+The MLP is balanced across all three classes
+($\text{recall}\,{=}\,0.92/0.71/0.69$). The MLP--K-Means gap is
+essentially a Medium-class story: unsupervised partitioning of an
+imbalanced, mostly-linear feature space does not align with the
+class boundaries CE optimises directly.
 
 \begin{figure}[h!]
     \centering
-    \begin{subfigure}[t]{\columnwidth}
-        \centering
-        \includegraphics[width=0.6\linewidth]{figures/cm_mlp.png}
-        \caption{MLP (MS2): balanced across classes.}
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/cm_mlp.png}
+        \caption{MLP: balanced.}
         \label{fig:cm_mlp}
-    \end{subfigure}\\[0.4em]
-    \begin{subfigure}[t]{\columnwidth}
-        \centering
-        \includegraphics[width=0.6\linewidth]{figures/cm_kmeans.png}
-        \caption{K-Means (MS2): collapses Medium into Low.}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/cm_kmeans.png}
+        \caption{K-Means: collapses Medium.}
         \label{fig:cm_km}
     \end{subfigure}
-    \caption{Test-set confusion matrices for the two MS2 classifiers
-    (row-normalised recall; counts in parentheses).}
+    \caption{Test-set confusion matrices (row-normalised recall;
+    counts in parentheses).}
     \label{fig:cm}
 \end{figure}
 
@@ -279,13 +288,13 @@ macro-F1 (higher = better). Best of each task in bold.
 \textbf{LinReg (MS1)} & reg & CF ridge $\lambda{=}10$        & MSE $\mathbf{0.993}$ \\
 KRR (MS1)      & reg & linear kernel, $\lambda{=}1$         & MSE $0.969$ \\
 KNN (MS1)      & reg & $k{=}17$, cosine, weighted           & MSE $1.62$  \\
-MLP (MS2)      & reg & $(32)$, $\eta{=}3{\cdot}10^{-3}$, $\beta{=}0.9$ & MSE $1.101$ \\
+MLP (MS2)      & reg & $(64,32)$, $\eta{=}3{\cdot}10^{-4}$, $\beta{=}0.9$ & MSE $1.027$ \\
 \midrule
 LogReg (MS1)   & clf & balanced wts, $\eta{=}0.3$, $\beta{=}0.9$ & $80.4\%$ / F1 $0.706$ \\
 SVM (MS1)      & clf & $\lambda{=}10^{-2}$, batch $32$         & $82.3\%$ / F1 $0.733$ \\
 KNN (MS1)      & clf & $k{=}17$, cosine, weighted              & $80.1\%$ / F1 $0.623$ \\
-\textbf{MLP (MS2)} & clf & $(32)$ ReLU, Softmax+CE, $\beta{=}0.9$ & $86.3\%$ / F1 $\mathbf{0.798}$ \\
-K-Means (MS2)  & clf & $K{=}30$, km++${\times}10$              & $72.8\%$ / F1 $0.603$ \\
+\textbf{MLP (MS2)} & clf & $(64,32)$ ReLU, Softmax+CE, $\beta{=}0.9$ & $85.8\%$ / F1 $\mathbf{0.778}$ \\
+K-Means (MS2)  & clf & $K{=}50$, km++${\times}10$              & $76.0\%$ / F1 $0.634$ \\
 \bottomrule
 \end{tabular}}
 \end{table}
@@ -293,15 +302,14 @@ K-Means (MS2)  & clf & $K{=}30$, km++${\times}10$              & $72.8\%$ / F1 $
 
 \subsection{Conclusion}
 \label{sec:conclusion}
-A from-scratch MLP with one hidden layer of $32$ ReLU units and
-heavy-ball momentum is the best classifier across both milestones
-(test F1 $\mathbf{0.798}$); the gain over MS1's SVM is minority-class
-loss shaping, not representational capacity. MLP regression matches
-MS1's ridge within fold noise, confirming the signal is near-linear
-in the $13$ z-scored features.
-K-Means trails every parametric model and we find that choosing $K$
-matters far more than how clusters are initialised: the K-Means
-inertia objective and the imbalanced voting objective are misaligned.
+A from-scratch MLP with $(64,32)$ ReLU, Softmax+CE and momentum is
+the best classifier across both milestones (test F1
+$\mathbf{0.778}$, $+0.045$ over MS1's SVM); the ablation isolates
+momentum, ReLU and training budget as the three cliffs. MLP
+regression matches MS1's ridge within fold noise once its own $\eta$
+is used. K-Means trails every parametric model: $K$ matters far more
+than initialisation, and the inertia objective is misaligned with
+the imbalanced voting objective.
 
 
 

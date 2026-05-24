@@ -91,6 +91,7 @@ def load_data(path='data/features.npz', val_frac=0.2, seed=0):
 def mlp_lr_sweep(data, lrs, hidden=(64, 32), epochs=40, batch_size=32, beta=0.9):
     """Sweep learning rate via stratified 5-fold CV on the train split."""
     print("\n[MLP] learning rate sweep")
+    np.random.seed(100)
     C = get_n_classes(np.concatenate([data['y_tr_clf'], data['y_val_clf']]))
     fixed = dict(hidden_dims=hidden, activation='relu', loss='ce',
                  epochs=epochs, batch_size=batch_size, beta=beta,
@@ -106,6 +107,7 @@ def mlp_lr_sweep(data, lrs, hidden=(64, 32), epochs=40, batch_size=32, beta=0.9)
 def mlp_arch_sweep(data, archs, lr, epochs=40, batch_size=32, beta=0.9):
     """CV over a few hidden-layer architectures at the selected lr."""
     print("\n[MLP] architecture sweep")
+    np.random.seed(100)
     C = get_n_classes(np.concatenate([data['y_tr_clf'], data['y_val_clf']]))
     fixed = dict(activation='relu', loss='ce',
                  epochs=epochs, batch_size=batch_size, lr=lr, beta=beta,
@@ -118,9 +120,64 @@ def mlp_arch_sweep(data, archs, lr, epochs=40, batch_size=32, beta=0.9):
     return res
 
 
+def mlp_ablation(data, best_lr, best_arch, epochs=40, batch_size=32, beta=0.9):
+    """Compact 5-fold CV ablation around the selected config: ReLU vs
+    Sigmoid, CE vs MSE-on-onehot, momentum, batch size, epochs."""
+    print("\n[MLP] ablation (5-fold stratified CV)")
+    np.random.seed(100)
+    C = get_n_classes(np.concatenate([data['y_tr_clf'], data['y_val_clf']]))
+    base = dict(hidden_dims=best_arch, activation='relu', loss='ce',
+                epochs=epochs, batch_size=batch_size, lr=best_lr, beta=beta,
+                task='classification', n_classes=C)
+
+    configs = {
+        'relu':     {},
+        'sigmoid':  dict(activation='sigmoid'),
+        'ce':       {},
+        'mse_oh':   dict(loss='mse'),
+        'beta_0':   dict(beta=0.0),
+        'beta_0.5': dict(beta=0.5),
+        'beta_0.9': {},
+        'bs_8':     dict(batch_size=8),
+        'bs_128':   dict(batch_size=128),
+        'ep_10':    dict(epochs=10),
+        'ep_100':   dict(epochs=100),
+    }
+    out = {}
+    for name, override in configs.items():
+        cfg = dict(base, **override)
+        _, results = stratified_kfold_cross_validation(
+            MLPWrapper, [cfg], data['X_tr'], data['y_tr_clf'],
+            k=5, verbose=False,
+        )
+        out[name] = dict(
+            f1_mean=float(results[0]['f1_mean']),
+            f1_std =float(results[0]['f1_std']),
+        )
+        print(f"  {name:10s}: F1 {out[name]['f1_mean']:.4f}"
+              f" +- {out[name]['f1_std']:.4f}")
+    return out
+
+
+def mlp_reg_lr_sweep(data, lrs, hidden=(32,), epochs=40, batch_size=32, beta=0.9):
+    """Sweep learning rate for MLP regression via 5-fold CV."""
+    print("\n[MLP] regression learning rate sweep")
+    np.random.seed(100)
+    fixed = dict(hidden_dims=hidden, activation='relu', loss='mse',
+                 epochs=epochs, batch_size=batch_size, beta=beta,
+                 task='regression')
+    res = hyperparameter_sweep(
+        MLPWrapper, 'lr', list(lrs), fixed,
+        data['X_tr'], data['y_tr_reg'],
+        task='regression', k=5, stratified=False, verbose=True,
+    )
+    return res
+
+
 def kmeans_k_sweep(data, Ks, n_restarts=10):
     """Sweep K via stratified 5-fold CV + record inertia for elbow."""
     print("\n[KMeans] K sweep + inertia")
+    np.random.seed(100)
     fixed = dict(init='kmeans++', n_restarts=n_restarts, max_iters=200)
     res = hyperparameter_sweep(
         KMeans, 'K', list(Ks), fixed,
@@ -189,8 +246,24 @@ def mlp_loss_curve(data, lr, hidden, epochs, batch_size, beta):
     return train_curve, val_loss
 
 
-def final_test(data, mlp_cfg, km_cfg):
+def _per_class_prf(y_true, y_pred, n_classes=3):
+    """Per-class precision, recall, F1. Returns dict {class_idx: (p, r, f1)}."""
+    out = {}
+    for c in range(n_classes):
+        tp = int(np.sum((y_pred == c) & (y_true == c)))
+        fp = int(np.sum((y_pred == c) & (y_true != c)))
+        fn = int(np.sum((y_pred != c) & (y_true == c)))
+        p = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        r = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * p * r / (p + r) if (p + r) > 0 else 0.0
+        out[c] = (float(p), float(r), float(f1))
+    return out
+
+
+def final_test(data, mlp_cfg, km_cfg, mlp_reg_cfg=None):
     """Refit on train+val, evaluate on the official test set."""
+    if mlp_reg_cfg is None:
+        mlp_reg_cfg = mlp_cfg
     print("\n[final] refit on train+val and evaluate on test")
     X_full = np.concatenate([data['X_tr'], data['X_val']])
     y_clf_full = np.concatenate([data['y_tr_clf'], data['y_val_clf']])
@@ -216,27 +289,29 @@ def final_test(data, mlp_cfg, km_cfg):
         fit_time=fit_t,
         config  =mlp_cfg,
         preds   =preds,
+        per_class=_per_class_prf(data['y_te_clf'], preds),
     )
     print(f"  MLP clf: acc {out['mlp_clf']['test_acc']:.2f}%"
           f" | F1 {out['mlp_clf']['test_f1']:.4f}"
           f" | fit {fit_t*1e3:.0f} ms")
 
-    # MLP regression — same architecture but Identity output, MSE loss
+    # MLP regression — same architecture but Identity output, MSE loss.
+    # Uses its own (typically smaller) learning rate from mlp_reg_cfg.
     np.random.seed(100)
-    dims = [X_full.shape[1]] + list(mlp_cfg['hidden']) + [1]
-    acts = [ReLU] * len(mlp_cfg['hidden']) + [Identity]
+    dims = [X_full.shape[1]] + list(mlp_reg_cfg['hidden']) + [1]
+    acts = [ReLU] * len(mlp_reg_cfg['hidden']) + [Identity]
     m = MLP(dimensions=tuple(dims), activations=tuple(acts))
     y_col = y_reg_full.astype(np.float64).reshape(-1, 1)
     t0 = time.time()
     m.fit(X_full, y_col, loss=MSE,
-          epochs=mlp_cfg['epochs'], batch_size=mlp_cfg['batch_size'],
-          learning_rate=mlp_cfg['lr'], beta=mlp_cfg['beta'])
+          epochs=mlp_reg_cfg['epochs'], batch_size=mlp_reg_cfg['batch_size'],
+          learning_rate=mlp_reg_cfg['lr'], beta=mlp_reg_cfg['beta'])
     fit_t = time.time() - t0
     preds = m.predict(data['X_te']).ravel()
     out['mlp_reg'] = dict(
         test_mse=float(mse_fn(preds, data['y_te_reg'])),
         fit_time=fit_t,
-        config  =mlp_cfg,
+        config  =mlp_reg_cfg,
     )
     print(f"  MLP reg: MSE {out['mlp_reg']['test_mse']:.4f}"
           f" | fit {fit_t*1e3:.0f} ms")
@@ -255,6 +330,7 @@ def final_test(data, mlp_cfg, km_cfg):
         fit_time=fit_t,
         config  =km_cfg,
         preds   =preds,
+        per_class=_per_class_prf(data['y_te_clf'], preds),
     )
     print(f"  KM  clf: acc {out['km_clf']['test_acc']:.2f}%"
           f" | F1 {out['km_clf']['test_f1']:.4f}"
@@ -462,6 +538,26 @@ def main():
         epochs=40, batch_size=32, beta=0.9,
     )
 
+    # Compact ablation around the selected config (ReLU vs Sigmoid,
+    # CE vs MSE, momentum, batch size, epochs).
+    ablation = mlp_ablation(
+        data, best_lr=best_lr, best_arch=best_arch,
+        epochs=40, batch_size=32, beta=0.9,
+    )
+
+    # MLP regression: sweep the learning rate on the same log grid.
+    reg_lr_res = mlp_reg_lr_sweep(
+        data, lrs=[1e-4, 3e-4, 1e-3, 3e-3, 1e-2, 3e-2, 1e-1],
+        hidden=best_arch, epochs=40, batch_size=32, beta=0.9,
+    )
+    # NaN-safe argmin (lr=0.1 can diverge for the regression MLP).
+    reg_means = np.nan_to_num(np.asarray(reg_lr_res['means'], dtype=float),
+                              nan=np.inf, posinf=np.inf)
+    best_reg_lr_idx = int(np.argmin(reg_means))
+    best_reg_lr = reg_lr_res['param_values'][best_reg_lr_idx]
+    print(f"  >> best regression lr = {best_reg_lr}"
+          f"  (CV MSE = {reg_means[best_reg_lr_idx]:.4f})")
+
     # ----- K-Means sweeps -----
     k_res = kmeans_k_sweep(data, Ks=[3, 5, 10, 15, 20, 30, 50], n_restarts=10)
     best_k_idx = int(np.argmax(k_res['f1_means']))
@@ -471,10 +567,12 @@ def main():
     init_cmp = kmeans_init_compare(data, K=best_K, n_runs=20)
 
     # ----- Final test-set evaluation -----
-    mlp_cfg = dict(hidden=best_arch, lr=best_lr, beta=0.9,
-                   epochs=40, batch_size=32)
-    km_cfg  = dict(K=best_K, init='kmeans++', n_restarts=10)
-    final   = final_test(data, mlp_cfg, km_cfg)
+    mlp_cfg     = dict(hidden=best_arch, lr=best_lr,     beta=0.9,
+                       epochs=40, batch_size=32)
+    mlp_reg_cfg = dict(hidden=best_arch, lr=best_reg_lr, beta=0.9,
+                       epochs=40, batch_size=32)
+    km_cfg      = dict(K=best_K, init='kmeans++', n_restarts=10)
+    final = final_test(data, mlp_cfg, km_cfg, mlp_reg_cfg=mlp_reg_cfg)
 
     # ----- Figures (one PNG per panel for cleaner LaTeX subfigure layout) -----
     fig_mlp_lr  (lr_res,    save=os.path.join(FIG_DIR, 'mlp_lr.png'))
@@ -533,6 +631,13 @@ def main():
             best_K=int(best_K),
         ),
         kmeans_init_compare = init_cmp,
+        mlp_ablation = ablation,
+        mlp_reg_lr_sweep = dict(
+            lrs=list(reg_lr_res['param_values']),
+            mse=list(map(float, reg_lr_res['means'])),
+            mse_std=list(map(float, reg_lr_res['stds'])),
+            best_lr=best_reg_lr,
+        ),
         final = final,
     )
     with open(os.path.join(FIG_DIR, 'summary.json'), 'w') as f:
