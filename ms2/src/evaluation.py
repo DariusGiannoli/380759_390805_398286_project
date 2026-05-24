@@ -110,7 +110,8 @@ def train_and_evaluate_regression(method_obj, X_tr, y_tr, X_te, y_te):
 # Cross-validation
 # --------------------------------------------------------------------------
 def _score(preds, labels, task):
-    """Loss-like score (lower = better)."""
+    """Loss-like score (lower = better). Classification keeps accuracy error
+    as a secondary diagnostic; model selection uses macro-F1 below."""
     if task == 'regression':
         return mse_fn(preds, labels)
     return 1.0 - accuracy_fn(preds, labels) / 100.0
@@ -126,7 +127,8 @@ def kfold_cross_validation(method_class, kwargs_list, features, labels,
 
     Returns (best_kwargs, list_of_results) where each result has:
     'kwargs', 'mean', 'std', 'folds' (loss-like score per fold), and for
-    classification 'f1_mean', 'f1_std', 'f1_folds'.
+    classification 'f1_mean', 'f1_std', 'f1_folds'. Classification selects
+    the best configuration by macro-F1; regression selects by MSE.
     """
     if verbose:
         print(f"  -- {k}-fold CV ({len(kwargs_list)} configs)")
@@ -158,9 +160,15 @@ def kfold_cross_validation(method_class, kwargs_list, features, labels,
         if verbose:
             tag = f" | F1 {out['f1_mean']:.4f}" if task == 'classification' else ""
             print(f"     {kwargs} -> {out['mean']:.4f} +- {out['std']:.4f}{tag}")
-    best = min(results, key=lambda r: r['mean'])
+    if task == 'classification':
+        best = max(results, key=lambda r: r['f1_mean'])
+    else:
+        best = min(results, key=lambda r: r['mean'])
     if verbose:
-        print(f"  -- best: {best['kwargs']} (mean {best['mean']:.4f})")
+        if task == 'classification':
+            print(f"  -- best: {best['kwargs']} (F1 {best['f1_mean']:.4f})")
+        else:
+            print(f"  -- best: {best['kwargs']} (MSE {best['mean']:.4f})")
     return best['kwargs'], results
 
 
@@ -200,7 +208,7 @@ def stratified_kfold_cross_validation(method_class, kwargs_list, features,
         if verbose:
             print(f"     {kwargs} -> err {out['mean']:.4f} +- {out['std']:.4f}"
                   f" | F1 {out['f1_mean']:.4f}")
-    best = min(results, key=lambda r: r['mean'])
+    best = max(results, key=lambda r: r['f1_mean'])
     if verbose:
         print(f"  -- best: {best['kwargs']} (F1 {best['f1_mean']:.4f})")
     return best['kwargs'], results

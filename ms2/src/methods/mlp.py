@@ -1,5 +1,8 @@
 import numpy as np
 
+from src.activations import Softmax
+from src.losses import CrossEntropy
+
 
 class MLP:
     def __init__(self, dimensions, activations):
@@ -69,10 +72,21 @@ class MLP:
         dW = {}
         db = {}
 
-        # Output layer: delta_L = dL/dz_L * dz_L/da_L (elementwise chain rule).
-        # For combined softmax+CE this works because Softmax.gradient returns
-        # ones and CrossEntropy.gradient returns the full softmax+CE delta.
-        delta = loss.gradient(y_true, z[self.L]) * self.activations[self.L - 1].gradient(a[self.L])
+        # Output layer. Softmax has a dense Jacobian, so handle its
+        # vector-Jacobian product explicitly instead of pretending it is an
+        # elementwise activation. For Softmax+CE this reduces to the usual
+        # closed form (p - y) / N.
+        output_activation = self.activations[self.L - 1]
+        if output_activation is Softmax:
+            if loss is CrossEntropy:
+                delta = loss.gradient(y_true, z[self.L])
+            else:
+                grad_pred = loss.gradient(y_true, z[self.L])
+                delta = z[self.L] * (
+                    grad_pred - np.sum(grad_pred * z[self.L], axis=1, keepdims=True)
+                )
+        else:
+            delta = loss.gradient(y_true, z[self.L]) * output_activation.gradient(a[self.L])
 
         for l in range(self.L, 0, -1):
             dW[l] = z[l - 1].T @ delta

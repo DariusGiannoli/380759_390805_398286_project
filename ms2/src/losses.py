@@ -25,11 +25,9 @@ class MSE:
 class CrossEntropy:
     """
     Categorical cross-entropy loss. Expects y_pred to be softmax probabilities
-    and y_true to be one-hot. .gradient() returns (probs - y_true)/N directly:
-    this matches the analytical combined softmax+CE backprop step. To use it
-    correctly, set Softmax as the activation of the output layer — Softmax's
-    .gradient() returns ones, so MLP.back_prop's chain rule  loss.gradient *
-    activation.gradient  yields the desired delta.
+    and y_true to be one-hot. .gradient() returns the analytical combined
+    Softmax+CE delta, (probs - y_true)/N, which MLP.back_prop uses directly
+    when the output activation is Softmax.
     """
 
     @staticmethod

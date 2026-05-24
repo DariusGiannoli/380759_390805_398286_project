@@ -61,5 +61,8 @@ def grid_search(method_class, param_grid, features, labels, task,
             method_class, kwargs_list, features, labels, task, k=k,
             verbose=verbose,
         )
-    sorted_r = sorted(results, key=lambda r: r['mean'])
+    if task == 'classification':
+        sorted_r = sorted(results, key=lambda r: r['f1_mean'], reverse=True)
+    else:
+        sorted_r = sorted(results, key=lambda r: r['mean'])
     return sorted_r, sorted_r[0]['kwargs']

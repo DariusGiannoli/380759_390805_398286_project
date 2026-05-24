@@ -38,10 +38,10 @@ class Identity:
 
 class Softmax:
     """
-    Row-wise softmax. The gradient returns ones so that, when paired with
-    CrossEntropy whose .gradient() returns (probs - y_true) / N, the backprop
-    rule  delta = loss.gradient * activation.gradient  evaluates to the
-    correct combined softmax+CE delta in one step.
+    Row-wise softmax. Its true derivative is a dense per-sample Jacobian, so
+    MLP.back_prop handles Softmax output layers explicitly. The elementwise
+    gradient here is only a compatibility fallback for the simple activation
+    interface used by the tests.
     """
 
     @staticmethod

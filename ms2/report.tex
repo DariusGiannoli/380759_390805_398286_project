@@ -100,8 +100,9 @@ regression).
 knobs are cliffs: momentum (F1 $0.48/0.56/0.74$ for
 $\beta{=}0/0.5/0.9$), activation (Sigmoid $0.51$ vs ReLU $0.69$),
 and training budget (epochs~$10$: $0.54$; batch~$128$: $0.55$ ---
-both under-train in $40$ epochs). Two knobs are within fold noise:
-CE vs MSE-on-onehot ($0.71$ vs $0.73$) and bs~$8$ vs $32$.
+both under-train in $40$ epochs). Batch size $8$ vs $32$ is within
+fold noise. For the final classifier we keep CE+Softmax, the
+matched probabilistic objective; MSE-on-onehot is only a sanity check.
 
 \begin{figure}[h!]
     \centering
@@ -230,7 +231,7 @@ The gain over SVM lands on the minority classes (per-class F1 in
 Table~\ref{tab:per_class}, especially High) --- exactly the
 bottleneck MS1 flagged. The architecture sweep attributes $+0.04$
 CV F1 to the extra hidden layer; the ablation attributes the rest
-to momentum and training time, with loss choice within noise.
+to momentum and training time.
 
 \emph{MLP regression matches ridge within noise.} A separate $\eta$
 sweep on the regression task bottoms out at $\eta{=}3{\cdot}10^{-4}$
@@ -285,8 +286,8 @@ macro-F1 (higher = better). Best of each task in bold.
 \toprule
 \textbf{Method} & \textbf{Task} & \textbf{Config} & \textbf{Test} \\
 \midrule
-\textbf{LinReg (MS1)} & reg & CF ridge $\lambda{=}10$        & MSE $\mathbf{0.993}$ \\
-KRR (MS1)      & reg & linear kernel, $\lambda{=}1$         & MSE $0.969$ \\
+LinReg (MS1) & reg & CF ridge $\lambda{=}10$        & MSE $0.993$ \\
+\textbf{KRR (MS1)}      & reg & linear kernel, $\lambda{=}1$         & MSE $\mathbf{0.969}$ \\
 KNN (MS1)      & reg & $k{=}17$, cosine, weighted           & MSE $1.62$  \\
 MLP (MS2)      & reg & $(64,32)$, $\eta{=}3{\cdot}10^{-4}$, $\beta{=}0.9$ & MSE $1.027$ \\
 \midrule
