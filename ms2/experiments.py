@@ -31,12 +31,14 @@ from src.optimization import hyperparameter_sweep
 plt.rcParams.update({
     'figure.dpi': 110,
     'savefig.dpi': 200,
-    'font.size': 9,
-    'axes.titlesize': 10,
-    'axes.labelsize': 9,
-    'legend.fontsize': 8,
-    'xtick.labelsize': 8,
-    'ytick.labelsize': 8,
+    # Larger font sizes so axis labels and tick labels remain readable
+    # when the PNG is scaled down to ~0.32 or 0.48 \columnwidth in LaTeX.
+    'font.size': 12,
+    'axes.titlesize': 13,
+    'axes.labelsize': 12,
+    'legend.fontsize': 11,
+    'xtick.labelsize': 11,
+    'ytick.labelsize': 11,
     'axes.spines.top': False,
     'axes.spines.right': False,
 })
@@ -213,6 +215,7 @@ def final_test(data, mlp_cfg, km_cfg):
         test_f1 =float(macrof1_fn(preds, data['y_te_clf'])),
         fit_time=fit_t,
         config  =mlp_cfg,
+        preds   =preds,
     )
     print(f"  MLP clf: acc {out['mlp_clf']['test_acc']:.2f}%"
           f" | F1 {out['mlp_clf']['test_f1']:.4f}"
@@ -251,6 +254,7 @@ def final_test(data, mlp_cfg, km_cfg):
         test_f1 =float(macrof1_fn(preds, data['y_te_clf'])),
         fit_time=fit_t,
         config  =km_cfg,
+        preds   =preds,
     )
     print(f"  KM  clf: acc {out['km_clf']['test_acc']:.2f}%"
           f" | F1 {out['km_clf']['test_f1']:.4f}"
@@ -259,27 +263,37 @@ def final_test(data, mlp_cfg, km_cfg):
 
 
 # ---------------------------------------------------------------------
-# Figures (legends placed OUTSIDE plot area; addresses MS1 feedback)
+# Figures (each panel saved as its own PNG so report.tex can use the
+# LaTeX subfigure environment for cleaner layout).
 # ---------------------------------------------------------------------
-def fig_mlp_sweeps(lr_res, arch_res, loss_curve, save):
-    fig, axes = plt.subplots(1, 3, figsize=(7.2, 2.3))
+PANEL_SIZE = (3.4, 2.6)  # inches per single panel; ~4:3 looks good in 2-col
 
-    # (a) lr sweep
-    ax = axes[0]
+
+def _save(fig, path):
+    fig.savefig(path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  saved {path}")
+
+
+def fig_mlp_lr(lr_res, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     ax.errorbar(lr_res['param_values'], lr_res['f1_means'],
                 yerr=lr_res['f1_stds'], marker='o', color=COLORS['mlp'],
                 capsize=2, lw=1.2, ms=4)
     ax.set_xscale('log')
-    ax.set_xlabel('learning rate')
+    ax.set_xlabel('learning rate $\\eta$')
     ax.set_ylabel('5-fold CV macro-F1')
-    ax.set_title('(a) MLP: lr')
     best_lr_idx = int(np.argmax(lr_res['f1_means']))
     ax.scatter([lr_res['param_values'][best_lr_idx]],
                [lr_res['f1_means'][best_lr_idx]],
-               marker='*', s=80, color='red', zorder=5)
+               marker='*', s=110, color='red', zorder=5,
+               label='selected')
+    ax.legend(loc='lower right', frameon=False)
+    _save(fig, save)
 
-    # (b) architecture sweep
-    ax = axes[1]
+
+def fig_mlp_arch(arch_res, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     arch_labels = [str(a) for a in arch_res['param_values']]
     means = arch_res['f1_means']
     stds  = arch_res['f1_stds']
@@ -287,33 +301,28 @@ def fig_mlp_sweeps(lr_res, arch_res, loss_curve, save):
     ax.bar(x, means, yerr=stds, color=COLORS['mlp'], alpha=0.85,
            capsize=2, error_kw=dict(lw=1))
     ax.set_xticks(x)
-    ax.set_xticklabels(arch_labels, rotation=20, ha='right')
+    ax.set_xticklabels(arch_labels, rotation=25, ha='right')
     ax.set_ylabel('5-fold CV macro-F1')
-    ax.set_title('(b) MLP: hidden dims')
+    ax.set_xlabel('hidden layer dimensions')
     ax.set_ylim(min(means) - 0.04, max(means) + 0.02)
+    _save(fig, save)
 
-    # (c) loss curve
-    ax = axes[2]
+
+def fig_mlp_loss(loss_curve, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     train_curve, val_loss = loss_curve
     epochs = np.arange(1, len(train_curve) + 1)
-    ax.plot(epochs, train_curve, color=COLORS['mlp'], lw=1.4, label='train')
-    ax.axhline(val_loss, color=COLORS['gray'], ls='--', lw=1, label='val (final)')
+    ax.plot(epochs, train_curve, color=COLORS['mlp'], lw=1.5, label='train')
+    ax.axhline(val_loss, color=COLORS['gray'], ls='--', lw=1.2,
+               label='val (final)')
     ax.set_xlabel('epoch')
     ax.set_ylabel('cross-entropy loss')
-    ax.set_title('(c) MLP: training curve')
     ax.legend(loc='upper right', frameon=False)
-
-    plt.tight_layout()
-    plt.savefig(save, bbox_inches='tight')
-    plt.close(fig)
-    print(f"  saved {save}")
+    _save(fig, save)
 
 
-def fig_kmeans_summary(k_res, init_cmp, save):
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.4))
-
-    # (a) K sweep
-    ax = axes[0]
+def fig_kmeans_k(k_res, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     Ks = np.array(k_res['param_values'])
     f1 = k_res['f1_means']
     f1_std = k_res['f1_stds']
@@ -321,24 +330,27 @@ def fig_kmeans_summary(k_res, init_cmp, save):
     inertia_norm = (inertia - inertia.min()) / (inertia.max() - inertia.min())
 
     ax.errorbar(Ks, f1, yerr=f1_std, marker='o', color=COLORS['kmeans'],
-                capsize=2, lw=1.2, ms=4, label='CV macro-F1')
-    ax.set_xlabel('K')
+                capsize=2, lw=1.2, ms=4)
+    ax.set_xlabel('number of clusters $K$')
     ax.set_ylabel('5-fold CV macro-F1', color=COLORS['kmeans'])
     ax.tick_params(axis='y', labelcolor=COLORS['kmeans'])
+
     ax2 = ax.twinx()
     ax2.plot(Ks, inertia_norm, color=COLORS['gray'], lw=1.2, marker='s',
-             ms=3, label='inertia (norm.)')
+             ms=3)
     ax2.set_ylabel('inertia (min–max norm.)', color=COLORS['gray'])
     ax2.tick_params(axis='y', labelcolor=COLORS['gray'])
     ax2.spines['top'].set_visible(False)
-    ax.set_title('(a) K-Means: K sweep')
+
     best_k = Ks[np.argmax(f1)]
     ax.axvline(best_k, color='red', ls=':', lw=0.8)
     ax.text(best_k, ax.get_ylim()[0], f' K*={best_k}', color='red',
             va='bottom', fontsize=8)
+    _save(fig, save)
 
-    # (b) init comparison
-    ax = axes[1]
+
+def fig_kmeans_init(init_cmp, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     names = list(init_cmp.keys())
     f1m = [init_cmp[n]['f1_mean'] for n in names]
     f1s = [init_cmp[n]['f1_std']  for n in names]
@@ -346,56 +358,78 @@ def fig_kmeans_summary(k_res, init_cmp, save):
     ax.bar(x, f1m, yerr=f1s, color=COLORS['kmeans'], alpha=0.85,
            capsize=2, error_kw=dict(lw=1))
     ax.set_xticks(x)
-    ax.set_xticklabels(names, rotation=20, ha='right')
+    ax.set_xticklabels(names, rotation=25, ha='right')
     ax.set_ylabel('val macro-F1 (20 seeds)')
-    ax.set_title('(b) K-Means: init strategy')
-
-    plt.tight_layout()
-    plt.savefig(save, bbox_inches='tight')
-    plt.close(fig)
-    print(f"  saved {save}")
+    ax.set_xlabel('initialisation strategy')
+    _save(fig, save)
 
 
-def fig_comparison_bar(ms1_clf, ms2_clf, ms1_reg, ms2_reg, save):
-    """Side-by-side: MS1 vs MS2 final test F1 (clf) and MSE (reg)."""
-    fig, axes = plt.subplots(1, 2, figsize=(6.6, 2.5))
-
-    # classification F1 (higher = better)
-    ax = axes[0]
+def fig_comparison_clf(ms1_clf, ms2_clf, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     names = list(ms1_clf.keys()) + list(ms2_clf.keys())
     vals  = list(ms1_clf.values()) + list(ms2_clf.values())
-    colors = [COLORS['gray']] * len(ms1_clf) + [COLORS['mlp']] * (len(ms2_clf) - 1) + [COLORS['kmeans']]
+    colors = [COLORS['gray']] * len(ms1_clf) \
+        + [COLORS['mlp']] * (len(ms2_clf) - 1) + [COLORS['kmeans']]
     x = np.arange(len(names))
     ax.barh(x, vals, color=colors, alpha=0.9)
     for i, v in enumerate(vals):
-        ax.text(v + 0.005, i, f'{v:.3f}', va='center', fontsize=7.5)
+        ax.text(v + 0.005, i, f'{v:.3f}', va='center', fontsize=8)
     ax.set_yticks(x)
     ax.set_yticklabels(names)
-    ax.set_xlabel('test macro-F1')
-    ax.set_title('(a) Classification')
+    ax.set_xlabel('test macro-F1 (higher = better)')
     ax.invert_yaxis()
     ax.set_xlim(0, max(vals) * 1.18)
+    _save(fig, save)
 
-    # regression MSE (lower = better)
-    ax = axes[1]
+
+def _row_normalised_cm(y_true, y_pred, n_classes):
+    """Confusion matrix with rows normalised to sum to 1 (per-class recall view).
+    Returns (counts, normalised) as (n_classes, n_classes) arrays."""
+    cm = np.zeros((n_classes, n_classes), dtype=int)
+    for t, p in zip(y_true.astype(int), y_pred.astype(int)):
+        cm[t, p] += 1
+    row_sums = cm.sum(axis=1, keepdims=True)
+    row_sums[row_sums == 0] = 1
+    cm_norm = cm / row_sums
+    return cm, cm_norm
+
+
+def fig_confusion_matrix(y_true, y_pred, title, save, n_classes=3,
+                         labels=('Low', 'Medium', 'High'), cmap='Blues'):
+    cm, cm_norm = _row_normalised_cm(y_true, y_pred, n_classes)
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
+    im = ax.imshow(cm_norm, cmap=cmap, vmin=0.0, vmax=1.0, aspect='equal')
+    ax.set_xticks(np.arange(n_classes))
+    ax.set_yticks(np.arange(n_classes))
+    ax.set_xticklabels(labels)
+    ax.set_yticklabels(labels)
+    ax.set_xlabel('predicted')
+    ax.set_ylabel('true')
+    ax.set_title(title)
+    # Cell annotations: recall (count)
+    for i in range(n_classes):
+        for j in range(n_classes):
+            colour = 'white' if cm_norm[i, j] > 0.55 else 'black'
+            ax.text(j, i, f'{cm_norm[i,j]:.2f}\n({cm[i,j]})',
+                    ha='center', va='center', color=colour, fontsize=10)
+    _save(fig, save)
+
+
+def fig_comparison_reg(ms1_reg, ms2_reg, save):
+    fig, ax = plt.subplots(figsize=PANEL_SIZE)
     names = list(ms1_reg.keys()) + list(ms2_reg.keys())
     vals  = list(ms1_reg.values()) + list(ms2_reg.values())
     colors = [COLORS['gray']] * len(ms1_reg) + [COLORS['mlp']] * len(ms2_reg)
     x = np.arange(len(names))
     ax.barh(x, vals, color=colors, alpha=0.9)
     for i, v in enumerate(vals):
-        ax.text(v + 0.02, i, f'{v:.3f}', va='center', fontsize=7.5)
+        ax.text(v + 0.02, i, f'{v:.3f}', va='center', fontsize=8)
     ax.set_yticks(x)
     ax.set_yticklabels(names)
-    ax.set_xlabel('test MSE')
-    ax.set_title('(b) Regression')
+    ax.set_xlabel('test MSE (lower = better)')
     ax.invert_yaxis()
     ax.set_xlim(0, max(vals) * 1.18)
-
-    plt.tight_layout()
-    plt.savefig(save, bbox_inches='tight')
-    plt.close(fig)
-    print(f"  saved {save}")
+    _save(fig, save)
 
 
 # ---------------------------------------------------------------------
@@ -442,11 +476,12 @@ def main():
     km_cfg  = dict(K=best_K, init='kmeans++', n_restarts=10)
     final   = final_test(data, mlp_cfg, km_cfg)
 
-    # ----- Figures -----
-    fig_mlp_sweeps(lr_res, arch_res, loss_curve,
-                   save=os.path.join(FIG_DIR, 'mlp_summary.png'))
-    fig_kmeans_summary(k_res, init_cmp,
-                       save=os.path.join(FIG_DIR, 'kmeans_summary.png'))
+    # ----- Figures (one PNG per panel for cleaner LaTeX subfigure layout) -----
+    fig_mlp_lr  (lr_res,    save=os.path.join(FIG_DIR, 'mlp_lr.png'))
+    fig_mlp_arch(arch_res,  save=os.path.join(FIG_DIR, 'mlp_arch.png'))
+    fig_mlp_loss(loss_curve,save=os.path.join(FIG_DIR, 'mlp_loss.png'))
+    fig_kmeans_k   (k_res,    save=os.path.join(FIG_DIR, 'kmeans_k.png'))
+    fig_kmeans_init(init_cmp, save=os.path.join(FIG_DIR, 'kmeans_init.png'))
 
     # MS1 numbers come from the published report; MS2 numbers from final_test.
     ms1_clf = {'LogReg (MS1)': 0.706, 'SVM (MS1)': 0.733,
@@ -456,8 +491,27 @@ def main():
     ms1_reg = {'LinReg (MS1)': 0.993, 'KRR lin (MS1)': 0.969,
                'KNN (MS1)':    1.62}
     ms2_reg = {'MLP (MS2)':    final['mlp_reg']['test_mse']}
-    fig_comparison_bar(ms1_clf, ms2_clf, ms1_reg, ms2_reg,
-                       save=os.path.join(FIG_DIR, 'comparison.png'))
+    fig_comparison_clf(ms1_clf, ms2_clf,
+                       save=os.path.join(FIG_DIR, 'comparison_clf.png'))
+    fig_comparison_reg(ms1_reg, ms2_reg,
+                       save=os.path.join(FIG_DIR, 'comparison_reg.png'))
+
+    # Confusion matrices for the two MS2 classifiers (test set).
+    fig_confusion_matrix(
+        data['y_te_clf'], final['mlp_clf']['preds'],
+        title='MLP (MS2) — test set',
+        save=os.path.join(FIG_DIR, 'cm_mlp.png'),
+    )
+    fig_confusion_matrix(
+        data['y_te_clf'], final['km_clf']['preds'],
+        title='K-Means (MS2) — test set',
+        save=os.path.join(FIG_DIR, 'cm_kmeans.png'),
+        cmap='Reds',
+    )
+
+    # Strip the (non-JSON-serializable) prediction arrays before dumping.
+    final['mlp_clf'].pop('preds', None)
+    final['km_clf'].pop('preds', None)
 
     # ----- JSON dump (for report copy/paste) -----
     summary = dict(

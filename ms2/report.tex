@@ -6,6 +6,7 @@
 \usepackage{booktabs}
 \usepackage{caption}
 \usepackage{subcaption}
+\usepackage{multirow}
 \usepackage{hyperref}
 
 % Tighter section spacing
@@ -74,41 +75,48 @@ sigmoid activations, and an output layer chosen by task: Softmax with
 Cross-Entropy (CE) loss for classification, Identity with MSE for
 regression. Forward and backward passes are coded by hand; the
 optimiser is mini-batch Stochastic Gradient Descent (SGD) with optional
-heavy-ball momentum ($\beta$). Weights are initialised with the
-Glorot/Xavier scheme ($\sigma{=}\sqrt{2/(\text{fan-in}{+}\text{fan-out})}$)
-to avoid the gradient-vanishing collapse reported in the lecture
-slides.
+heavy-ball momentum ($\beta$). Weights use Glorot/Xavier initialisation
+($\sigma{=}\sqrt{2/(\text{fan-in}{+}\text{fan-out})}$) to avoid
+gradient vanishing.
 
 \emph{Hyperparameter sweeps.} We swept the learning rate $\eta$ on a
-log grid from $10^{-4}$ to $10^{-1}$ (Fig.~\ref{fig:mlp}a) and the
-hidden architecture across six choices ranging from a single hidden
-layer with $32$ units to a $3$-layer pyramid of $(128,\,64,\,32)$
-units (Fig.~\ref{fig:mlp}b). The lr curve is sharply peaked: F1
-collapses for $\eta\!\lesssim\!10^{-3}$ (too few effective steps in
-40~epochs) and degrades mildly for $\eta\!\geq\!10^{-2}$
-(noisier updates), with the best CV F1 at $\eta{=}3{\cdot}10^{-3}$.
-The architecture sweep is essentially flat
-(all six configurations within $0.03$~F1 of one another and
-within fold standard deviation), which mirrors the MS1 finding that
-the regression signal is near-linear: adding width or depth does not
-unlock any usable non-linearity. We therefore select the smallest
-network --- one hidden layer with $32$ ReLU units --- as the simpler
+log grid from $10^{-4}$ to $10^{-1}$ (Fig.~\ref{fig:mlp_lr}) and six
+hidden architectures ranging from $(32)$ to $(128,\,64,\,32)$
+(Fig.~\ref{fig:mlp_arch}). The lr curve is sharply peaked: F1 collapses
+for $\eta\!\lesssim\!10^{-3}$ (too few effective steps in $40$ epochs)
+and degrades mildly for $\eta\!\geq\!10^{-2}$ (noisier updates), with
+the best CV F1 at $\eta{=}3{\cdot}10^{-3}$. The architecture sweep is
+flat within fold std, mirroring the MS1 finding that the signal is
+near-linear in the $13$ z-scored features: adding width or depth does
+not unlock usable non-linearity. We therefore select the smallest
+network --- one hidden layer of $32$ ReLU units --- as the simpler
 solution.
 
 \emph{Selected configuration.} One hidden layer of $32$ ReLU units,
 $\eta{=}3{\cdot}10^{-3}$, momentum $\beta{=}0.9$, batch size $32$,
-$40$ epochs. The training curve (Fig.~\ref{fig:mlp}c) converges
+$40$ epochs. The training curve (Fig.~\ref{fig:mlp_loss}) converges
 smoothly to a final-epoch validation CE of $0.33$.
 
 \begin{figure}[t!]
     \centering
-    \includegraphics[width=\columnwidth]{figures/mlp_summary.png}
-    \vspace{-0.3cm}
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/mlp_lr.png}
+        \caption{Learning rate $\eta$ (log-$x$); red star = selected.}
+        \label{fig:mlp_lr}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/mlp_arch.png}
+        \caption{Hidden-layer architecture; flat within fold noise.}
+        \label{fig:mlp_arch}
+    \end{subfigure}\\[0.4em]
+    \begin{subfigure}[t]{0.6\columnwidth}
+        \centering
+        \includegraphics[width=\linewidth]{figures/mlp_loss.png}
+        \caption{Training cross-entropy of the selected model.}
+        \label{fig:mlp_loss}
+    \end{subfigure}
     \caption{MLP sweeps (5-fold stratified CV macro-F1, error bars are
-    fold std). \textbf{(a)} Learning rate $\eta$ (log-$x$); red star =
-    selected value. \textbf{(b)} Hidden-layer architecture; flat curve
-    within fold noise. \textbf{(c)} Training cross-entropy of the
-    selected model vs the final-epoch validation value (grey dashed).}
+    fold std).}
     \label{fig:mlp}
 \end{figure}
 
@@ -119,13 +127,13 @@ assigning points to their nearest centre (Euclidean distance) and
 re-computing centres as cluster means. To use it as a classifier we
 attach a label to each cluster by majority vote over its training
 points, then classify a new point as the label of its nearest cluster.
-We implement two creativity extensions: K-Means++ seeding (each new
-centre sampled with probability proportional to its squared distance to
-the nearest existing centre) and best-of-$N$ restarts (run the
-algorithm $N$ times, keep the lowest-inertia solution).
+We implement two extensions: K-Means++ seeding (each new centre
+sampled with probability proportional to its squared distance to the
+nearest existing centre) and best-of-$N$ restarts (keep the
+lowest-inertia run out of $N$).
 
 \emph{Choosing $K$.} The number of clusters $K$ controls a strong
-tension on this dataset (Fig.~\ref{fig:km}a). Inertia decreases
+tension on this dataset (Fig.~\ref{fig:km_k}). Inertia decreases
 monotonically with $K$ (no clear elbow), but \emph{F1} keeps rising
 up to $K{=}30$ then degrades at $K{=}50$. The reason is class
 imbalance: with $K{=}3$ a majority vote inside each cluster collapses
@@ -135,26 +143,32 @@ clusters where Medium and High samples can dominate, lifting
 minority-class recall. We select $K{=}30$.
 
 \emph{Initialisation does not matter for F1.}
-Fig.~\ref{fig:km}b sweeps four init strategies at the selected $K$,
-$20$ random seeds each: K-Means++ and best-of-$10$ restarts both
-reduce the inertia variance ($\sigma{\approx}17$ for
-\textit{km++}{$\times$}$10$ vs $\sigma{\approx}46$ for plain random),
-confirming they do find geometrically better optima. But all four
-strategies land within $0.03$~F1 of one another, all within their own
-seed-to-seed std ($\sim\!0.07$). The K-Means objective (inertia) and
-the downstream classifier objective (macro-F1) are simply not aligned
-once cluster labels are decided by voting on imbalanced classes.
+Fig.~\ref{fig:km_init} sweeps four init strategies at the selected $K$
+($20$ seeds each). K-Means++ and best-of-$10$ restarts cut inertia
+variance ($\sigma{\approx}17$ for \textit{km++}{$\times$}$10$ vs
+$\sigma{\approx}46$ for plain random), confirming they find
+geometrically better optima --- yet all four strategies land within
+$0.03$~F1 of one another, well within their own seed-to-seed std
+($\sim\!0.07$). The K-Means objective (inertia) and the downstream
+voting objective (macro-F1) are simply not aligned on imbalanced
+classes.
 
 \begin{figure}[t!]
     \centering
-    \includegraphics[width=\columnwidth]{figures/kmeans_summary.png}
-    \vspace{-0.3cm}
-    \caption{K-Means sweeps. \textbf{(a)} $K$ sweep: 5-fold CV
-    macro-F1 (red) versus normalised inertia (grey). The inertia
-    elbow ($K{\approx}15$) disagrees with the F1 peak ($K{=}30$),
-    reflecting the imbalanced-vote effect discussed in
-    §\ref{sec:kmeans}. \textbf{(b)} Init strategy at $K{=}30$,
-    $20$ random seeds: better inertia does not translate to better F1.}
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/kmeans_k.png}
+        \caption{$K$ sweep: CV macro-F1 (red) and normalised inertia
+        (grey). Inertia elbow ($K{\approx}15$) disagrees with F1
+        peak ($K{=}30$).}
+        \label{fig:km_k}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/kmeans_init.png}
+        \caption{Init strategy at $K{=}30$, $20$ seeds each: better
+        inertia does \emph{not} translate to better F1.}
+        \label{fig:km_init}
+    \end{subfigure}
+    \caption{K-Means sweeps on the train split.}
     \label{fig:km}
 \end{figure}
 
@@ -175,7 +189,7 @@ from: MS1 already noted that minority-class recall was the bottleneck.
 The MLP's Softmax+CE combination, trained with class-aware
 back-propagation, fits a smoother probability surface in the High
 neighbourhood than the hinge-loss SVM. The architecture sweep
-(Fig.~\ref{fig:mlp}b) shows the MLP does \emph{not} use width or depth
+(Fig.~\ref{fig:mlp_arch}) shows the MLP does \emph{not} use width or depth
 for new non-linear features --- those plateau within fold noise ---
 so the residual signal it picks up is loss-driven, not
 representation-driven.
@@ -189,20 +203,73 @@ optimal on this data.
 
 \emph{K-Means is comparable to $k$-NN but well below parametric
 methods.} The voting classifier achieves test F1 $0.603$, within
-$0.02$ of MS1's $k$-NN ($0.623$) --- which is the same order of
-magnitude as the $\sim\!0.08$ seed-to-seed std we observed in
-Fig.~\ref{fig:km}b --- but $0.19$ below the MLP. Both K-Means and
-$k$-NN partition feature space by geometric proximity rather than by
-class boundaries, so neither matches the parametric supervised models
-on this imbalanced task.
+$0.02$ of MS1's $k$-NN ($0.623$) --- the same order of magnitude as
+the $\sim\!0.08$ seed-to-seed std seen in Fig.~\ref{fig:km_init} ---
+but $0.19$ below the MLP. The confusion matrices (Fig.~\ref{fig:cm})
+localise that gap: K-Means catches Low (recall $0.94$) and even High
+(recall $0.85$) acceptably, but \emph{collapses on Medium}
+(recall $0.16$; $84/107$ Medium samples voted as Low). The MLP is much
+more balanced across the three classes ($0.94/0.69/0.69$). So the
+MLP--K-Means gap is essentially a Medium-class story --- different
+from the High-class gap that drove MS1's parametric--vs--non-parametric
+margin --- and a direct symptom of unsupervised partitioning
+mis-aligning with class boundaries on imbalanced data.
 
 \begin{figure}[t!]
     \centering
-    \includegraphics[width=\columnwidth]{figures/comparison.png}
-    \vspace{-0.3cm}
-    \caption{Final test-set comparison (gray = MS1 models, blue = MS2
-    MLP, red = MS2 K-Means). \textbf{(a)} macro-F1 (higher = better).
-    \textbf{(b)} MSE (lower = better).}
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/cm_mlp.png}
+        \caption{MLP (MS2): balanced across classes.}
+        \label{fig:cm_mlp}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/cm_kmeans.png}
+        \caption{K-Means (MS2): collapses Medium into Low.}
+        \label{fig:cm_km}
+    \end{subfigure}
+    \caption{Test-set confusion matrices for the two MS2 classifiers
+    (row-normalised recall; counts in parentheses).}
+    \label{fig:cm}
+\end{figure}
+
+\begin{table}[h]
+\centering
+\caption{Per-class precision / recall / F1 on the official test set
+for the two MS2 classifiers, complementing Fig.~\ref{fig:cm}. The
+MLP--K-Means F1 gap is concentrated on the Medium class.}
+\label{tab:per_class}
+\small
+\begin{tabular}{llccc}
+\toprule
+\textbf{Method} & \textbf{Class} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} \\
+\midrule
+\multirow{3}{*}{MLP}
+        & Low    & $0.89$ & $0.94$ & $0.91$ \\
+        & Medium & $0.77$ & $0.69$ & $0.73$ \\
+        & High   & $0.82$ & $0.69$ & $0.75$ \\
+\midrule
+\multirow{3}{*}{K-Means}
+        & Low    & $0.76$ & $0.94$ & $0.84$ \\
+        & Medium & $0.47$ & $0.16$ & $0.24$ \\
+        & High   & $0.65$ & $0.85$ & $0.73$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[t!]
+    \centering
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/comparison_clf.png}
+        \caption{Classification: test macro-F1 (higher is better).}
+        \label{fig:cmp_clf}
+    \end{subfigure}\hfill
+    \begin{subfigure}[t]{0.48\columnwidth}
+        \includegraphics[width=\linewidth]{figures/comparison_reg.png}
+        \caption{Regression: test MSE (lower is better).}
+        \label{fig:cmp_reg}
+    \end{subfigure}
+    \caption{Final test-set comparison. Grey = MS1 models, blue =
+    MS2 MLP, red = MS2 K-Means.}
     \label{fig:cmp}
 \end{figure}
 
