@@ -1,5 +1,6 @@
 import numpy as np
 
+
 class MLP:
     def __init__(self, dimensions, activations):
         """
@@ -15,63 +16,109 @@ class MLP:
         dimensions =  (2,     10,          5)
         activations = (      Sigmoid,      Sigmoid)
         """
+        assert len(activations) == len(dimensions) - 1, (
+            "activations must have len(dimensions) - 1 entries"
+        )
+        self.dimensions = tuple(dimensions)
+        self.activations = tuple(activations)
+        self.L = len(dimensions) - 1  # number of weight layers
 
-        ### WRITE YOUR CODE HERE
+        # Xavier/Glorot initialization. Bias init to zeros.
+        self.W = {}
+        self.b = {}
+        for l in range(1, self.L + 1):
+            fan_in = dimensions[l - 1]
+            fan_out = dimensions[l]
+            scale = np.sqrt(2.0 / (fan_in + fan_out))
+            self.W[l] = np.random.randn(fan_in, fan_out) * scale
+            self.b[l] = np.zeros(fan_out)
 
     def feed_forward(self, x):
         """
         Execute a forward feed through the network.
-        :param x: (array) Batch of input data vectors.
-        :return: (tpl) Node outputs and activations per layer. The numbering of the output is equivalent to the layer numbers.
+        :param x: (array) Batch of input data vectors, shape (N, D).
+        :return: (z, a)
+                 z: dict with z[0] = x and z[l] = f(a[l]) for l >= 1
+                 a: dict with a[l] = z[l-1] @ W[l] + b[l] for l >= 1
         """
-
-        ### WRITE YOUR CODE HERE
-
+        z = {0: x}
+        a = {}
+        for l in range(1, self.L + 1):
+            a[l] = z[l - 1] @ self.W[l] + self.b[l]
+            z[l] = self.activations[l - 1].forward(a[l])
+        return z, a
 
     def predict(self, x):
         """
-        :param x: (array) Containing parameters
+        :param x: (array) Containing parameters, shape (N, D).
         :return: (array) A 2D array of shape (n_cases, n_classes).
         """
-
-        ### WRITE YOUR CODE HERE
-
+        z, _ = self.feed_forward(x)
+        return z[self.L]
 
     def back_prop(self, z, a, y_true, loss):
         """
-        The input dicts keys represent the layers of the net.
-        a = { 0: x,
-              1: f(w1(x) + b1)
-              2: f(w2(a2) + b2)
-              }
-        :param a: (dict) w^T@x + b
-        :param z: (dict) f(a)
-        :param y_true: (array) One hot encoded truth vector.
+        Backpropagate the loss and return per-layer gradients.
+
+        :param z: (dict) post-activations from feed_forward (z[0] is input)
+        :param a: (dict) pre-activations from feed_forward
+        :param y_true: (array) one-hot/target, shape (N, C)
         :param loss: Loss class with a static .gradient(y_true, y_pred) method.
-        :return:
+        :return: (dW, db) dicts indexed by layer.
         """
+        dW = {}
+        db = {}
 
-        ### WRITE YOUR CODE HERE
+        # Output layer: delta_L = dL/dz_L * dz_L/da_L (elementwise chain rule).
+        # For combined softmax+CE this works because Softmax.gradient returns
+        # ones and CrossEntropy.gradient returns the full softmax+CE delta.
+        delta = loss.gradient(y_true, z[self.L]) * self.activations[self.L - 1].gradient(a[self.L])
 
+        for l in range(self.L, 0, -1):
+            dW[l] = z[l - 1].T @ delta
+            db[l] = np.sum(delta, axis=0)
+            if l > 1:
+                # Propagate the error backward through W[l] then apply the
+                # activation derivative of the previous layer.
+                delta = (delta @ self.W[l].T) * self.activations[l - 2].gradient(a[l - 1])
+
+        return dW, db
 
     def update_w_b(self, index, dw, delta):
         """
-        Update weights and biases.
-        :param index: (int) Number of the layer
-        :param dw: (array) Partial derivatives
-        :param delta: (array) Delta error.
+        Update weights and biases of a single layer using the gradients.
+        :param index: (int) layer number (1..L)
+        :param dw: (array) gradient w.r.t. W[index]
+        :param delta: (array) gradient w.r.t. b[index]
         """
-
-        ### WRITE YOUR CODE HERE
+        self.W[index] -= self.lr * dw
+        self.b[index] -= self.lr * delta
 
     def fit(self, x, y_true, loss, epochs, batch_size, learning_rate=1e-3):
         """
-        :param x: (array) Containing parameters
-        :param y_true: (array) Containing one hot encoded labels.
-        :param loss: Loss class (MSE, CrossEntropy etc.)
-        :param epochs: (int) Number of epochs.
-        :param batch_size: (int)
-        :param learning_rate: (flt)
-        """
+        Train the model with mini-batch SGD.
 
-        ### WRITE YOUR CODE HERE
+        :param x: (array) inputs, shape (N, D)
+        :param y_true: (array) one-hot/target labels, shape (N, C)
+        :param loss: Loss class (MSE, CrossEntropy, ...)
+        :param epochs: (int) number of full passes over the data
+        :param batch_size: (int) mini-batch size
+        :param learning_rate: (float) SGD step size
+        """
+        self.lr = learning_rate
+        N = x.shape[0]
+        bs = max(1, min(int(batch_size), N))
+
+        for _ in range(int(epochs)):
+            perm = np.random.permutation(N)
+            for start in range(0, N, bs):
+                idx = perm[start:start + bs]
+                x_batch = x[idx]
+                y_batch = y_true[idx]
+
+                z, a = self.feed_forward(x_batch)
+                dW, db = self.back_prop(z, a, y_batch, loss)
+                for l in range(1, self.L + 1):
+                    self.update_w_b(l, dW[l], db[l])
+
+        return self.predict(x)
