@@ -59,9 +59,9 @@ models on the full training set before evaluating once on the held-out
 test set ($N{=}400$).
 
 \subsection{Validation protocol}
-For classification we use stratified 5-fold CV --- the High class has
-only a few dozen training samples, so non-stratified folds risk
-empty validation slices. We report mean and standard deviation across
+For classification we use stratified 5-fold CV: the High class has only
+37 samples in the 80\% CV pool (51 in the full training set), so
+non-stratified folds risk empty validation slices. We report mean and standard deviation across
 the five folds. Hyperparameters are selected by the highest CV
 macro-F1 (and not by classification error rate); for K-Means we also
 report the within-cluster sum of squares (inertia) to compare init
