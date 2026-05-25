@@ -38,9 +38,9 @@ Milestone~1 (MS1) and reopens the same two questions: predict the
 continuous addiction score (regression) and the 3-class addiction level
 \{Low, Medium, High\} (classification). MS1 concluded that the signal
 was near-linear in the $13$ z-scored features. MS2 puts that conclusion
-under stress by adding a non-linear parametric model --- a
+under stress by adding a non-linear parametric model, a
 Multi-Layer Perceptron (MLP) trained from scratch with
-back-propagation --- and a fundamentally different family ---
+back-propagation, and a fundamentally different family :
 K-Means used as a voting classifier. Class imbalance (Low~$68.9\%$,
 Medium~$27.9\%$, High~$3.2\%$) keeps macro-F1 as the primary
 classification metric; mean squared error (MSE) is the regression
@@ -170,7 +170,7 @@ Fig.~\ref{fig:km_init}): K-Means++ alone neither lowers inertia
 ($\bar{I}{=}8571$ vs random $8543$) nor F1 ($0.57$ vs $0.59$);
 ten restarts do the real work (inertia $\sigma$: $27{\to}16$ with
 km++${\times}10$). All four mean F1s land within $\sim\!0.03$ of
-each other --- inside the seed-to-seed std --- so the inertia and
+each other, inside the seed-to-seed std, so the inertia and
 voting objectives are misaligned on imbalanced data.
 
 
