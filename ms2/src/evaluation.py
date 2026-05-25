@@ -48,10 +48,10 @@ class MLPWrapper:
         self.model = MLP(dimensions=tuple(dims), activations=tuple(acts))
 
     def fit(self, X, y):
+        if self.task == 'classification' and self.n_classes is None:
+            self.n_classes = get_n_classes(y)
         self._build(X.shape[1])
         if self.task == 'classification':
-            if self.n_classes is None:
-                self.n_classes = get_n_classes(y)
             y_train = label_to_onehot(y.astype(int), self.n_classes)
             loss = CrossEntropy if self.loss_name == 'ce' else MSE
         else:

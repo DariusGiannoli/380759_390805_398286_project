@@ -338,6 +338,79 @@ def final_test(data, mlp_cfg, km_cfg, mlp_reg_cfg=None):
     return out
 
 
+def mlp_final_seed_sweep(data, mlp_cfg, mlp_reg_cfg, seeds=range(10)):
+    """Repeat the final MLP fits over several random seeds on train+val.
+
+    This isolates optimisation/initialisation variance for the selected
+    architecture and hyperparameters. It keeps the official test set untouched
+    until each final refit is complete, matching final_test().
+    """
+    print("\n[final] MLP seed robustness")
+    X_full = np.concatenate([data['X_tr'], data['X_val']])
+    y_clf_full = np.concatenate([data['y_tr_clf'], data['y_val_clf']])
+    y_reg_full = np.concatenate([data['y_tr_reg'], data['y_val_reg']])
+    C = get_n_classes(y_clf_full)
+
+    clf_accs, clf_f1s, reg_mses = [], [], []
+    for seed in seeds:
+        np.random.seed(seed)
+        dims = [X_full.shape[1]] + list(mlp_cfg['hidden']) + [C]
+        acts = [ReLU] * len(mlp_cfg['hidden']) + [Softmax]
+        m = MLP(dimensions=tuple(dims), activations=tuple(acts))
+        y_oh = label_to_onehot(y_clf_full.astype(int), C)
+        m.fit(X_full, y_oh, loss=CrossEntropy,
+              epochs=mlp_cfg['epochs'], batch_size=mlp_cfg['batch_size'],
+              learning_rate=mlp_cfg['lr'], beta=mlp_cfg['beta'])
+        preds = onehot_to_label(m.predict(data['X_te']))
+        clf_accs.append(float(accuracy_fn(preds, data['y_te_clf'])))
+        clf_f1s.append(float(macrof1_fn(preds, data['y_te_clf'])))
+
+        np.random.seed(seed)
+        dims = [X_full.shape[1]] + list(mlp_reg_cfg['hidden']) + [1]
+        acts = [ReLU] * len(mlp_reg_cfg['hidden']) + [Identity]
+        m = MLP(dimensions=tuple(dims), activations=tuple(acts))
+        y_col = y_reg_full.astype(np.float64).reshape(-1, 1)
+        m.fit(X_full, y_col, loss=MSE,
+              epochs=mlp_reg_cfg['epochs'], batch_size=mlp_reg_cfg['batch_size'],
+              learning_rate=mlp_reg_cfg['lr'], beta=mlp_reg_cfg['beta'])
+        preds = m.predict(data['X_te']).ravel()
+        reg_mses.append(float(mse_fn(preds, data['y_te_reg'])))
+
+    def stats(values):
+        values = np.asarray(values, dtype=float)
+        return dict(
+            values=list(map(float, values)),
+            mean=float(np.mean(values)),
+            std=float(np.std(values)),
+        )
+
+    out = dict(
+        seeds=list(map(int, seeds)),
+        clf_acc=stats(clf_accs),
+        clf_f1=stats(clf_f1s),
+        reg_mse=stats(reg_mses),
+    )
+    print(f"  MLP clf F1: {out['clf_f1']['mean']:.4f}"
+          f" +- {out['clf_f1']['std']:.4f} over {len(out['seeds'])} seeds")
+    print(f"  MLP reg MSE: {out['reg_mse']['mean']:.4f}"
+          f" +- {out['reg_mse']['std']:.4f} over {len(out['seeds'])} seeds")
+    return out
+
+
+def write_seed_summary_tex(seed_summary, path):
+    """Write a compact LaTeX sentence consumed by report.tex."""
+    n = len(seed_summary['seeds'])
+    with open(path, 'w') as f:
+        f.write(
+            "\\emph{Seed robustness.} Over "
+            f"{n} final MLP refits, classification reaches "
+            f"F1 ${seed_summary['clf_f1']['mean']:.3f}"
+            f"\\pm{seed_summary['clf_f1']['std']:.3f}$ and regression "
+            f"MSE ${seed_summary['reg_mse']['mean']:.3f}"
+            f"\\pm{seed_summary['reg_mse']['std']:.3f}$.\n"
+        )
+
+
 # ---------------------------------------------------------------------
 # Figures (each panel saved as its own PNG so report.tex can use the
 # LaTeX subfigure environment for cleaner layout).
@@ -573,6 +646,12 @@ def main():
                        epochs=40, batch_size=32)
     km_cfg      = dict(K=best_K, init='kmeans++', n_restarts=10)
     final = final_test(data, mlp_cfg, km_cfg, mlp_reg_cfg=mlp_reg_cfg)
+    seed_summary = mlp_final_seed_sweep(
+        data, mlp_cfg, mlp_reg_cfg=mlp_reg_cfg, seeds=range(10)
+    )
+    write_seed_summary_tex(
+        seed_summary, os.path.join(FIG_DIR, 'mlp_seed_summary.tex')
+    )
 
     # ----- Figures (one PNG per panel for cleaner LaTeX subfigure layout) -----
     fig_mlp_lr  (lr_res,    save=os.path.join(FIG_DIR, 'mlp_lr.png'))
@@ -639,6 +718,7 @@ def main():
             best_lr=best_reg_lr,
         ),
         final = final,
+        mlp_final_seed_sweep = seed_summary,
     )
     with open(os.path.join(FIG_DIR, 'summary.json'), 'w') as f:
         json.dump(summary, f, indent=2, default=str)

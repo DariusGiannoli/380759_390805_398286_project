@@ -57,11 +57,12 @@ def main(args):
     train_labels_reg     = train_labels_reg[perm]
     train_labels_classif = train_labels_classif[perm]
 
-    # Make a validation set (it can overwrite xtest, ytest)
+    # Make a validation set (it can overwrite xtest, ytest). Even in --test
+    # mode we keep the same fixed 80/20 split only to fit preprocessing
+    # statistics, matching the report-generation protocol exactly.
+    val_size   = int(0.2 * len(train_features))
+    train_size = len(train_features) - val_size
     if not args.test:
-        val_size   = int(0.2 * len(train_features))
-        train_size = len(train_features) - val_size
-
         val_features       = train_features[train_size:]
         val_labels_reg     = train_labels_reg[train_size:]
         val_labels_classif = train_labels_classif[train_size:]
@@ -76,12 +77,14 @@ def main(args):
         test_labels_classif = val_labels_classif
         print(f"Split          : {train_size} train / {val_size} val "
               f"(reporting as 'Test' but this is the validation set; pass --test for real test set)")
+        normalization_features = train_features
     else:
         print("Using full training set -> evaluating on test set")
+        normalization_features = train_features[:train_size]
 
     # z-score normalization using training-set statistics
-    mean = np.mean(train_features, axis=0, keepdims=True)
-    std  = np.std (train_features, axis=0, keepdims=True)
+    mean = np.mean(normalization_features, axis=0, keepdims=True)
+    std  = np.std (normalization_features, axis=0, keepdims=True)
     std[std == 0] = 1.0
     train_features = normalize_fn(train_features, mean, std)
     test_features  = normalize_fn(test_features,  mean, std)

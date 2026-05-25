@@ -7,7 +7,7 @@
 \usepackage{caption}
 \usepackage{subcaption}
 \usepackage{multirow}
-\usepackage{hyperref}
+\usepackage[hidelinks]{hyperref}
 
 % Tighter section spacing
 \usepackage{titlesec}
@@ -309,7 +309,7 @@ the best classifier across both milestones (test F1
 $\mathbf{0.778}$, $+0.045$ over MS1's SVM); the ablation isolates
 momentum, ReLU and training budget as the three cliffs. MLP
 regression matches MS1's ridge within fold noise once its own $\eta$
-is used. K-Means trails every parametric model: $K$ matters far more
+is used. \input{figures/mlp_seed_summary.tex} K-Means trails every parametric model: $K$ matters far more
 than initialisation, and the inertia objective is misaligned with
 the imbalanced voting objective.
 
