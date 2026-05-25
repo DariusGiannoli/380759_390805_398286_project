@@ -116,9 +116,11 @@ pass), and early stopping with best-val-loss weight restoration. We
 sweep $\lambda\in\{10^{-4},10^{-3},10^{-2}\}$ and $p\in\{0.1,0.3,0.5\}$,
 and compare a $200$-epoch run with patience $5$ against the fixed
 $40$-epoch baseline. On a 1280-sample / 13-feature CV pool the
-$(64,32)$ network is only mildly over-parameterised; we keep
-regularisation in the ablation alongside momentum and architecture, and
-adopt whichever setting wins CV macro-F1 in the selected configuration.
+$(64,32)$ network is only mildly over-parameterised: the best dropout
+($p{=}0.1$, F1 $0.726$), best L2 ($\lambda{=}10^{-3}$, F1 $0.720$)
+and early stopping (F1 $0.679$) all stay within fold noise or below the
+unregularised momentum baseline. The final configuration therefore
+keeps weight decay, dropout and early stopping disabled.
 
 \begin{figure}[h!]
     \centering

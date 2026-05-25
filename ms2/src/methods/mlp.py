@@ -174,6 +174,8 @@ class MLP:
         self.beta = float(beta)
         self.weight_decay = float(weight_decay)
         self.dropout_p = float(dropout)
+        if not 0.0 <= self.dropout_p < 1.0:
+            raise ValueError("dropout must be in [0, 1)")
         self.vW = {l: np.zeros_like(self.W[l]) for l in range(1, self.L + 1)}
         self.vb = {l: np.zeros_like(self.b[l]) for l in range(1, self.L + 1)}
         self.loss_history = []
