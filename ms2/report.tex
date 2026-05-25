@@ -100,9 +100,10 @@ regression).
 knobs are cliffs: momentum (F1 $0.48/0.56/0.74$ for
 $\beta{=}0/0.5/0.9$), activation (Sigmoid $0.51$ vs ReLU $0.69$),
 and training budget (epochs~$10$: $0.54$; batch~$128$: $0.55$ ---
-both under-train in $40$ epochs). Batch size $8$ vs $32$ is within
-fold noise. For the final classifier we keep CE+Softmax, the
-matched probabilistic objective; MSE-on-onehot is only a sanity check.
+both under-train in $40$ epochs). Two knobs are within fold noise:
+batch size $8$ vs $32$, and CE+Softmax vs MSE-on-onehot as a sanity
+check. We keep CE+Softmax for the final classifier because it is the
+matched probabilistic objective.
 
 \begin{figure}[h!]
     \centering
@@ -134,17 +135,7 @@ nearest existing centre) and best-of-$N$ restarts (keep the
 lowest-inertia run out of $N$).
 
 \emph{Choosing $K$.} The number of clusters $K$ controls a strong
-tension on this dataset (Fig.~\ref{fig:km_k}). Inertia decreases
-monotonically with $K$ (no clear elbow), and \emph{F1} keeps rising
-across the whole sweep, peaking at $K{=}50$ (CV F1 $0.55$). The
-reason is class imbalance: with $K{=}3$ a majority vote inside each
-cluster collapses to the global majority (Low), giving
-accuracy~${\approx}71\%$ but macro-F1~$0.31$. Increasing $K$ creates
-smaller, locally purer clusters where Medium and High samples can
-dominate, lifting minority-class recall. We select $K{=}50$ (largest
-$K$ on the grid that still leaves each cluster $\gtrsim\!25$ training
-points, avoiding a memorisation regime).
-\begin{figure}[h!]
+tension on this dataset (Fig.~\ref{fig:km_k}). \begin{figure}[h!]
     \centering
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/kmeans_k.png}
@@ -161,7 +152,17 @@ points, avoiding a memorisation regime).
     \end{subfigure}
     \caption{K-Means sweeps on the train split.}
     \label{fig:km}
-\end{figure}
+\end{figure} Inertia decreases
+monotonically with $K$ (no clear elbow), and \emph{F1} keeps rising
+across the whole sweep, peaking at $K{=}50$ (CV F1 $0.55$). The
+reason is class imbalance: with $K{=}3$ a majority vote inside each
+cluster collapses to the global majority (Low), giving
+accuracy~${\approx}71\%$ but macro-F1~$0.31$. Increasing $K$ creates
+smaller, locally purer clusters where Medium and High samples can
+dominate, lifting minority-class recall. We select $K{=}50$ (largest
+$K$ on the grid, with an average training-fold cluster size of about
+$25$ points, avoiding an obvious memorisation regime).
+
 
 \emph{Restarts cut variance; K-Means++ alone does not help.}
 Sweeping four init strategies at $K{=}50$ ($20$ seeds each,
