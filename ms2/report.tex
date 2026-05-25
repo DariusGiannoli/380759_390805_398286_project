@@ -80,29 +80,45 @@ heavy-ball momentum ($\beta$). Weights use Glorot/Xavier initialisation
 ($\sigma{=}\sqrt{2/(\text{fan-in}{+}\text{fan-out})}$) to avoid
 gradient vanishing.
 
-\emph{Hyperparameter sweeps.} We swept the learning rate $\eta$ on a
-log grid from $10^{-4}$ to $10^{-1}$ (Fig.~\ref{fig:mlp_lr}) and six
-hidden architectures from $(32)$ to $(128,\,64,\,32)$
-(Fig.~\ref{fig:mlp_arch}). The lr curve is sharply peaked: F1 collapses
-for $\eta\!\lesssim\!10^{-3}$ (too few effective steps in $40$ epochs)
-and degrades mildly for $\eta\!\geq\!10^{-2}$ (noisier updates), with
-the best CV F1 at $\eta{=}3{\cdot}10^{-3}$. The architecture sweep
-shows a real but moderate effect: single-layer nets cluster around CV
-F1 $0.70$ and the two-layer $(64,32)$ wins at $\mathbf{0.744}$, with
-the three-layer $(128,64,32)$ dropping back to $0.72$ (harder to
-optimise in $40$ epochs). The signal is therefore mostly linear, but
-one extra hidden layer buys a small genuine gain. We select $(64,32)$.
+\emph{Learning rate.} We swept $\eta$ on a log grid from $10^{-4}$ to
+$10^{-1}$ (Fig.~\ref{fig:mlp_lr}). The curve is sharply peaked: F1
+collapses for $\eta\!\lesssim\!10^{-3}$ (too few effective steps in
+$40$ epochs) and degrades mildly for $\eta\!\geq\!10^{-2}$ (noisier
+updates), with the best CV F1 at $\eta{=}3{\cdot}10^{-3}$.
 
+\smallskip
+\emph{Architecture.} Six hidden architectures from $(32)$ to
+$(128,\,64,\,32)$ (Fig.~\ref{fig:mlp_arch}) show a real but moderate
+effect: single-layer nets cluster around CV F1 $0.70$ and the
+two-layer $(64,32)$ wins at $\mathbf{0.744}$, with the three-layer
+$(128,64,32)$ dropping back to $0.72$ (harder to optimise in $40$
+epochs). The signal is mostly linear, but one extra hidden layer buys
+a small genuine gain. We select $(64,32)$.
+
+\smallskip
 \emph{Selected configuration.} Hidden layers $(64,32)$ ReLU,
 $\eta{=}3{\cdot}10^{-3}$, momentum $\beta{=}0.9$, batch size $32$,
 $40$ epochs (CE+Softmax for classification, MSE+Identity for
 regression).
 
+\smallskip
 \emph{Ablations} (5-fold CV around the selected config). Momentum,
 ReLU and training budget are the main cliffs; a small batch and the
 CE+Softmax vs MSE-on-onehot sanity check are within fold noise. We keep
 CE+Softmax for the final classifier because it is the matched
 probabilistic objective.
+
+\smallskip
+\emph{Regularisation.} We additionally implement L2 weight decay,
+inverted dropout on hidden layers (mask scaled by $1/(1-p)$ at train
+time, identity at inference, with the mask reapplied on the backward
+pass), and early stopping with best-val-loss weight restoration. We
+sweep $\lambda\in\{10^{-4},10^{-3},10^{-2}\}$ and $p\in\{0.1,0.3,0.5\}$,
+and compare a $200$-epoch run with patience $5$ against the fixed
+$40$-epoch baseline. On a 1280-sample / 13-feature CV pool the
+$(64,32)$ network is only mildly over-parameterised; we keep
+regularisation in the ablation alongside momentum and architecture, and
+adopt whichever setting wins CV macro-F1 in the selected configuration.
 
 \begin{figure}[h!]
     \centering
@@ -133,8 +149,7 @@ sampled with probability proportional to its squared distance to the
 nearest existing centre) and best-of-$N$ restarts (keep the
 lowest-inertia run out of $N$).
 
-\emph{Choosing $K$.} The number of clusters $K$ controls a strong
-tension on this dataset (Fig.~\ref{fig:km_k}). \begin{figure}[h!]
+\begin{figure}[h!]
     \centering
     \begin{subfigure}[t]{0.48\columnwidth}
         \includegraphics[width=\linewidth]{figures/kmeans_k.png}
@@ -151,7 +166,10 @@ tension on this dataset (Fig.~\ref{fig:km_k}). \begin{figure}[h!]
     \end{subfigure}
     \caption{K-Means sweeps on the train split.}
     \label{fig:km}
-\end{figure} Inertia decreases
+\end{figure}
+
+\emph{Choosing $K$.} The number of clusters $K$ controls a strong
+tension on this dataset (Fig.~\ref{fig:km_k}). Inertia decreases
 monotonically with $K$ (no clear elbow), and \emph{F1} keeps rising
 across the whole sweep, peaking at $K{=}50$ (CV F1 $0.55$). The
 reason is class imbalance: with $K{=}3$ a majority vote inside each
@@ -162,7 +180,7 @@ dominate, lifting minority-class recall. We select $K{=}50$ (largest
 $K$ on the grid, with an average training-fold cluster size of about
 $25$ points, avoiding an obvious memorisation regime).
 
-
+\smallskip
 \emph{Restarts cut variance; K-Means++ alone does not help.}
 Sweeping four init strategies at $K{=}50$ ($20$ seeds each,
 Fig.~\ref{fig:km_init}) shows that restarts reduce inertia variance,
@@ -181,6 +199,7 @@ selected MS1 and MS2 model on the same held-out test set. Three
 take-aways stand out.
 
 
+\smallskip
 \emph{MLP beats every MS1 classifier.} On classification, the MLP
 reaches test macro-F1 $\mathbf{0.778}$, a clear $+0.045$ over MS1's
 best (Linear SVM at $0.733$). This refines, rather than contradicts,
@@ -230,6 +249,7 @@ the bottleneck MS1 flagged; the architecture sweep gives the extra
 hidden layer credit for a modest gain, while ablations point to
 momentum and training time for the rest.
 
+\smallskip
 \emph{MLP regression matches ridge within noise.} A separate $\eta$
 sweep on the regression task selects $\eta{=}3{\cdot}10^{-4}$; with
 this task-specific step size, the MLP gives test MSE $\mathbf{1.027}$
@@ -237,6 +257,7 @@ vs ridge ($0.993$), within fold noise. K-Means could be turned into a
 regressor (mean cluster target), but matching ridge on a continuous
 target would need $K{\gg}50$ and is outside scope.
 
+\smallskip
 \emph{K-Means is comparable to $k$-NN but well below parametric
 methods.} The voting classifier reaches test F1 $0.634$, roughly
 matching MS1's $k$-NN but far below the MLP. The confusion matrices
@@ -298,7 +319,10 @@ A from-scratch MLP with $(64,32)$ ReLU, Softmax+CE and momentum is
 the best classifier across both milestones (test F1
 $\mathbf{0.778}$, $+0.045$ over MS1's SVM), with stable performance
 across random seeds. MLP regression matches MS1's ridge within fold
-noise once its own $\eta$ is used. \input{figures/mlp_seed_summary.tex}
+noise once its own $\eta$ is used.
+
+\input{figures/mlp_seed_summary.tex}
+
 K-Means trails every parametric model: $K$ matters far more than
 initialisation, and the inertia objective is misaligned with the
 imbalanced voting objective.

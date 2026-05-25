@@ -24,6 +24,7 @@ class MLPWrapper:
 
     def __init__(self, hidden_dims=(64, 32), activation='relu', loss='ce',
                  epochs=50, batch_size=32, lr=1e-2, beta=0.0,
+                 weight_decay=0.0, dropout=0.0, patience=None,
                  task='classification', n_classes=None):
         self.hidden_dims = tuple(hidden_dims)
         self.activation_name = activation
@@ -32,6 +33,9 @@ class MLPWrapper:
         self.batch_size = int(batch_size)
         self.lr = float(lr)
         self.beta = float(beta)
+        self.weight_decay = float(weight_decay)
+        self.dropout = float(dropout)
+        self.patience = patience
         self.task = task
         self.n_classes = n_classes
         self.model = None
@@ -47,20 +51,26 @@ class MLPWrapper:
             acts = [hidden_act] * len(self.hidden_dims) + [Identity]
         self.model = MLP(dimensions=tuple(dims), activations=tuple(acts))
 
-    def fit(self, X, y):
+    def fit(self, X, y, x_val=None, y_val=None):
         if self.task == 'classification' and self.n_classes is None:
             self.n_classes = get_n_classes(y)
         self._build(X.shape[1])
         if self.task == 'classification':
             y_train = label_to_onehot(y.astype(int), self.n_classes)
             loss = CrossEntropy if self.loss_name == 'ce' else MSE
+            y_val_arg = (label_to_onehot(y_val.astype(int), self.n_classes)
+                         if y_val is not None else None)
         else:
             y_train = y.astype(np.float64).reshape(-1, 1)
             loss = MSE
+            y_val_arg = (y_val.astype(np.float64).reshape(-1, 1)
+                         if y_val is not None else None)
         self.model.fit(
             X, y_train, loss=loss,
             epochs=self.epochs, batch_size=self.batch_size,
             learning_rate=self.lr, beta=self.beta,
+            weight_decay=self.weight_decay, dropout=self.dropout,
+            x_val=x_val, y_val=y_val_arg, patience=self.patience,
         )
         return self.predict(X)
 

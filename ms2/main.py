@@ -123,6 +123,9 @@ def main(args):
         method_obj._batch_size    = args.batch_size
         method_obj._learning_rate = learning_rate
         method_obj._beta          = args.beta
+        method_obj._weight_decay  = args.weight_decay
+        method_obj._dropout       = args.dropout
+        method_obj._patience      = args.patience if args.patience > 0 else None
     else:
         raise ValueError(f"Unknown method: {args.method}")
 
@@ -140,13 +143,23 @@ def main(args):
             C = get_n_classes(train_y)
             y_one_hot = label_to_onehot(train_y, C)
             loss = MSE if args.loss == "mse" else CrossEntropy
+            # Early stopping needs a val set; reuse the held-out split when
+            # available (in --test mode there is no val set so we skip it).
+            es_val_x = test_features if (method_obj._patience and not args.test) else None
+            es_val_y = label_to_onehot(test_y, C) if es_val_x is not None else None
             method_obj.fit(
                 train_features, y_one_hot, loss=loss,
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
                 beta=method_obj._beta,
+                weight_decay=method_obj._weight_decay,
+                dropout=method_obj._dropout,
+                x_val=es_val_x, y_val=es_val_y,
+                patience=method_obj._patience,
             )
+            if method_obj.stopped_epoch_ is not None:
+                print(f"  early-stopped at epoch {method_obj.stopped_epoch_}")
             preds_train = onehot_to_label(method_obj.predict(train_features))
         else:
             preds_train = method_obj.fit(train_features, train_y)
@@ -180,13 +193,21 @@ def main(args):
         t0 = time.time()
         if args.method == "mlp":
             y_train_col = train_y.reshape(-1, 1)
+            es_val_x = test_features if (method_obj._patience and not args.test) else None
+            es_val_y = test_y.reshape(-1, 1) if es_val_x is not None else None
             method_obj.fit(
                 train_features, y_train_col, loss=MSE,
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
                 beta=method_obj._beta,
+                weight_decay=method_obj._weight_decay,
+                dropout=method_obj._dropout,
+                x_val=es_val_x, y_val=es_val_y,
+                patience=method_obj._patience,
             )
+            if method_obj.stopped_epoch_ is not None:
+                print(f"  early-stopped at epoch {method_obj.stopped_epoch_}")
             preds_train = method_obj.predict(train_features).ravel()
         else:
             preds_train = method_obj.fit(train_features, train_y)
@@ -293,6 +314,26 @@ if __name__ == "__main__":
         type=float,
         default=0.9,
         help="momentum coefficient for MLP (0.0 = vanilla SGD)",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=0.0,
+        help="L2 weight-decay coefficient for MLP (0.0 disables it)",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.0,
+        help="dropout probability on MLP hidden activations (0.0 disables it)",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=0,
+        help="early-stopping patience for MLP (epochs without val-loss "
+             "improvement before stopping; 0 disables early stopping). "
+             "Only used outside --test mode, where a val split is available.",
     )
 
     # K-Means-specific arguments

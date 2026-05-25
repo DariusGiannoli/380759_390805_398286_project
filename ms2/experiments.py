@@ -122,7 +122,8 @@ def mlp_arch_sweep(data, archs, lr, epochs=40, batch_size=32, beta=0.9):
 
 def mlp_ablation(data, best_lr, best_arch, epochs=40, batch_size=32, beta=0.9):
     """Compact 5-fold CV ablation around the selected config: ReLU vs
-    Sigmoid, CE vs MSE-on-onehot, momentum, batch size, epochs."""
+    Sigmoid, CE vs MSE-on-onehot, momentum, batch size, epochs,
+    L2 weight decay, dropout, and early stopping."""
     print("\n[MLP] ablation (5-fold stratified CV)")
     np.random.seed(100)
     C = get_n_classes(np.concatenate([data['y_tr_clf'], data['y_val_clf']]))
@@ -142,6 +143,13 @@ def mlp_ablation(data, best_lr, best_arch, epochs=40, batch_size=32, beta=0.9):
         'bs_128':   dict(batch_size=128),
         'ep_10':    dict(epochs=10),
         'ep_100':   dict(epochs=100),
+        # --- Regularisation ablation -------------------------------------
+        'wd_1e-4':  dict(weight_decay=1e-4),
+        'wd_1e-3':  dict(weight_decay=1e-3),
+        'wd_1e-2':  dict(weight_decay=1e-2),
+        'do_0.1':   dict(dropout=0.1),
+        'do_0.3':   dict(dropout=0.3),
+        'do_0.5':   dict(dropout=0.5),
     }
     out = {}
     for name, override in configs.items():
@@ -156,6 +164,43 @@ def mlp_ablation(data, best_lr, best_arch, epochs=40, batch_size=32, beta=0.9):
         )
         print(f"  {name:10s}: F1 {out[name]['f1_mean']:.4f}"
               f" +- {out[name]['f1_std']:.4f}")
+
+    # Early stopping needs an explicit val set inside fit(), so we evaluate
+    # it manually with 5-fold splits and patience=5 on a 200-epoch budget.
+    print("\n[MLP] early stopping (5-fold stratified CV, patience=5, epochs=200)")
+    np.random.seed(100)
+    classes = np.unique(data['y_tr_clf'])
+    rs = np.random.RandomState(0)
+    class_folds = {}
+    for c in classes:
+        cls_idx = np.where(data['y_tr_clf'] == c)[0].copy()
+        rs.shuffle(cls_idx)
+        class_folds[c] = np.array_split(cls_idx, 5)
+    folds = [np.concatenate([class_folds[c][i] for c in classes]) for i in range(5)]
+    es_f1, es_stop = [], []
+    for i in range(5):
+        val_idx = folds[i]
+        tr_idx  = np.concatenate([folds[j] for j in range(5) if j != i])
+        wrapper = MLPWrapper(
+            hidden_dims=best_arch, activation='relu', loss='ce',
+            epochs=200, batch_size=batch_size, lr=best_lr, beta=beta,
+            patience=5, task='classification', n_classes=C,
+        )
+        wrapper.fit(data['X_tr'][tr_idx], data['y_tr_clf'][tr_idx],
+                    x_val=data['X_tr'][val_idx], y_val=data['y_tr_clf'][val_idx])
+        preds = wrapper.predict(data['X_tr'][val_idx])
+        es_f1.append(float(macrof1_fn(preds, data['y_tr_clf'][val_idx])))
+        es_stop.append(wrapper.model.stopped_epoch_ or 200)
+    out['early_stop_p5'] = dict(
+        f1_mean=float(np.mean(es_f1)),
+        f1_std =float(np.std(es_f1)),
+        stopped_epoch_mean=float(np.mean(es_stop)),
+        stopped_epoch_std =float(np.std(es_stop)),
+    )
+    print(f"  {'early_p5':10s}: F1 {out['early_stop_p5']['f1_mean']:.4f}"
+          f" +- {out['early_stop_p5']['f1_std']:.4f}"
+          f" | stop@ {out['early_stop_p5']['stopped_epoch_mean']:.1f}"
+          f" +- {out['early_stop_p5']['stopped_epoch_std']:.1f}")
     return out
 
 
