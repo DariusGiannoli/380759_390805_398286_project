@@ -52,13 +52,15 @@ We z-score normalize the $13$ features using \emph{training-set}
 statistics only. Crucially, we shuffle the training data with a fixed
 random seed \emph{before} taking an $80/20$ train/validation split,
 removing the leakage risk that an ordered split would otherwise
-introduce. The validation split is
-used for hyperparameter selection only; the final test set
-($N{=}400$) is held out until the very last evaluation.
+introduce. The 5-fold CV sweeps are run on the 80\% training part; the
+20\% validation split is used only for sanity checks and intermediate
+validation plots. After selecting hyperparameters, we refit the final
+models on the full training set before evaluating once on the held-out
+test set ($N{=}400$).
 
 \subsection{Validation protocol}
 For classification we use stratified 5-fold CV --- the High class has
-only $n{\approx}41$ training samples, so non-stratified folds risk
+only a few dozen training samples, so non-stratified folds risk
 empty validation slices. We report mean and standard deviation across
 the five folds. Hyperparameters are selected by the highest CV
 macro-F1 (and not by classification error rate); for K-Means we also
@@ -96,14 +98,11 @@ $\eta{=}3{\cdot}10^{-3}$, momentum $\beta{=}0.9$, batch size $32$,
 $40$ epochs (CE+Softmax for classification, MSE+Identity for
 regression).
 
-\emph{Ablations} (5-fold CV F1 around the selected config). Three
-knobs are cliffs: momentum (F1 $0.48/0.56/0.74$ for
-$\beta{=}0/0.5/0.9$), activation (Sigmoid $0.51$ vs ReLU $0.69$),
-and training budget (epochs~$10$: $0.54$; batch~$128$: $0.55$ ---
-both under-train in $40$ epochs). Two knobs are within fold noise:
-batch size $8$ vs $32$, and CE+Softmax vs MSE-on-onehot as a sanity
-check. We keep CE+Softmax for the final classifier because it is the
-matched probabilistic objective.
+\emph{Ablations} (5-fold CV around the selected config). Momentum,
+ReLU and training budget are the main cliffs; a small batch and the
+CE+Softmax vs MSE-on-onehot sanity check are within fold noise. We keep
+CE+Softmax for the final classifier because it is the matched
+probabilistic objective.
 
 \begin{figure}[h!]
     \centering
@@ -166,12 +165,10 @@ $25$ points, avoiding an obvious memorisation regime).
 
 \emph{Restarts cut variance; K-Means++ alone does not help.}
 Sweeping four init strategies at $K{=}50$ ($20$ seeds each,
-Fig.~\ref{fig:km_init}): K-Means++ alone neither lowers inertia
-($\bar{I}{=}8571$ vs random $8543$) nor F1 ($0.57$ vs $0.59$);
-ten restarts do the real work (inertia $\sigma$: $27{\to}16$ with
-km++${\times}10$). All four mean F1s land within $\sim\!0.03$ of
-each other, inside the seed-to-seed std, so the inertia and
-voting objectives are misaligned on imbalanced data.
+Fig.~\ref{fig:km_init}) shows that restarts reduce inertia variance,
+while K-Means++ alone barely changes F1. All four mean F1s land inside
+the seed-to-seed std, so the inertia and voting objectives are
+misaligned on imbalanced data.
 
 
 
@@ -228,34 +225,27 @@ MLP--K-Means F1 gap is concentrated on the Medium class.}
 \bottomrule
 \end{tabular}
 \end{table}
-The gain over SVM lands on the minority classes (per-class F1 in
-Table~\ref{tab:per_class}, especially High) --- exactly the
-bottleneck MS1 flagged. The architecture sweep attributes $+0.04$
-CV F1 to the extra hidden layer; the ablation attributes the rest
-to momentum and training time.
+The gain over SVM lands on the minority classes (Table~\ref{tab:per_class}),
+the bottleneck MS1 flagged; the architecture sweep gives the extra
+hidden layer credit for a modest gain, while ablations point to
+momentum and training time for the rest.
 
 \emph{MLP regression matches ridge within noise.} A separate $\eta$
-sweep on the regression task bottoms out at $\eta{=}3{\cdot}10^{-4}$
-(CV MSE $1.13$ vs $1.33$ at the classification-best $3{\cdot}10^{-3}$);
-with this task-specific $\eta$ the MLP gives test MSE
-$\mathbf{1.027}$ vs ridge ($0.993$) --- a $0.034$ gap, within the
-$\sim\!0.11$ fold std. K-Means could be turned into a regressor
-(mean cluster target), but matching ridge on a continuous target
-would need $K{\gg}50$ and is outside scope.
+sweep on the regression task selects $\eta{=}3{\cdot}10^{-4}$; with
+this task-specific step size, the MLP gives test MSE $\mathbf{1.027}$
+vs ridge ($0.993$), within fold noise. K-Means could be turned into a
+regressor (mean cluster target), but matching ridge on a continuous
+target would need $K{\gg}50$ and is outside scope.
 
 \emph{K-Means is comparable to $k$-NN but well below parametric
-methods.} The voting classifier reaches test F1 $0.634$, marginally
-above MS1's $k$-NN ($0.623$) but inside the $\sim\!0.07$ seed std
-(Fig.~\ref{fig:km_init}), and $0.14$ below the MLP. The confusion
-matrices (Fig.~\ref{fig:cm}) localise the gap: K-Means handles Low
-(recall $0.96$) and even captures High at high precision
-($0.88$, recall $0.54$) but \emph{collapses on Medium} (recall
-$0.27$, F1 $0.38$): $63/107$ Medium samples are voted as Low.
-The MLP is balanced across all three classes
-($\text{recall}\,{=}\,0.92/0.71/0.69$). The MLP--K-Means gap is
-essentially a Medium-class story: unsupervised partitioning of an
-imbalanced, mostly-linear feature space does not align with the
-class boundaries CE optimises directly.
+methods.} The voting classifier reaches test F1 $0.634$, roughly
+matching MS1's $k$-NN but far below the MLP. The confusion matrices
+(Fig.~\ref{fig:cm}) localise the gap: K-Means handles Low and captures
+some High samples, but \emph{collapses on Medium}; the MLP is balanced
+across all three classes. The MLP--K-Means gap is essentially a
+Medium-class story: unsupervised partitioning of an imbalanced,
+mostly-linear feature space does not align with the class boundaries CE
+optimises directly.
 
 \begin{figure}[h!]
     \centering
@@ -306,12 +296,12 @@ K-Means (MS2)  & clf & $K{=}50$, km++${\times}10$              & $76.0\%$ / F1 $
 \label{sec:conclusion}
 A from-scratch MLP with $(64,32)$ ReLU, Softmax+CE and momentum is
 the best classifier across both milestones (test F1
-$\mathbf{0.778}$, $+0.045$ over MS1's SVM); the ablation isolates
-momentum, ReLU and training budget as the three cliffs. MLP
-regression matches MS1's ridge within fold noise once its own $\eta$
-is used. \input{figures/mlp_seed_summary.tex} K-Means trails every parametric model: $K$ matters far more
-than initialisation, and the inertia objective is misaligned with
-the imbalanced voting objective.
+$\mathbf{0.778}$, $+0.045$ over MS1's SVM), with stable performance
+across random seeds. MLP regression matches MS1's ridge within fold
+noise once its own $\eta$ is used. \input{figures/mlp_seed_summary.tex}
+K-Means trails every parametric model: $K$ matters far more than
+initialisation, and the inertia objective is misaligned with the
+imbalanced voting objective.
 
 
 
