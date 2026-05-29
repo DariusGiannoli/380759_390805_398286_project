@@ -57,11 +57,12 @@ def main(args):
     train_labels_reg     = train_labels_reg[perm]
     train_labels_classif = train_labels_classif[perm]
 
-    # Make a validation set (it can overwrite xtest, ytest)
+    # Make a validation set (it can overwrite xtest, ytest). Even in --test
+    # mode we keep the same fixed 80/20 split only to fit preprocessing
+    # statistics, matching the report-generation protocol exactly.
+    val_size   = int(0.2 * len(train_features))
+    train_size = len(train_features) - val_size
     if not args.test:
-        val_size   = int(0.2 * len(train_features))
-        train_size = len(train_features) - val_size
-
         val_features       = train_features[train_size:]
         val_labels_reg     = train_labels_reg[train_size:]
         val_labels_classif = train_labels_classif[train_size:]
@@ -76,12 +77,14 @@ def main(args):
         test_labels_classif = val_labels_classif
         print(f"Split          : {train_size} train / {val_size} val "
               f"(reporting as 'Test' but this is the validation set; pass --test for real test set)")
+        normalization_features = train_features
     else:
         print("Using full training set -> evaluating on test set")
+        normalization_features = train_features[:train_size]
 
     # z-score normalization using training-set statistics
-    mean = np.mean(train_features, axis=0, keepdims=True)
-    std  = np.std (train_features, axis=0, keepdims=True)
+    mean = np.mean(normalization_features, axis=0, keepdims=True)
+    std  = np.std (normalization_features, axis=0, keepdims=True)
     std[std == 0] = 1.0
     train_features = normalize_fn(train_features, mean, std)
     test_features  = normalize_fn(test_features,  mean, std)
@@ -102,6 +105,9 @@ def main(args):
         hidden_dims = [int(h) for h in args.hidden_dims.split(",") if h.strip()]
         act_name = args.activation.lower()
         hidden_act = ReLU if act_name == "relu" else Sigmoid
+        learning_rate = args.lr
+        if learning_rate is None:
+            learning_rate = 3e-4 if args.task == "regression" else 3e-3
 
         if args.task == "classification":
             C = get_n_classes(train_labels_classif)
@@ -115,8 +121,11 @@ def main(args):
         # Stash MLP-specific knobs so the train block below can read them.
         method_obj._epochs        = args.epochs
         method_obj._batch_size    = args.batch_size
-        method_obj._learning_rate = args.lr
+        method_obj._learning_rate = learning_rate
         method_obj._beta          = args.beta
+        method_obj._weight_decay  = args.weight_decay
+        method_obj._dropout       = args.dropout
+        method_obj._patience      = args.patience if args.patience > 0 else None
     else:
         raise ValueError(f"Unknown method: {args.method}")
 
@@ -134,13 +143,23 @@ def main(args):
             C = get_n_classes(train_y)
             y_one_hot = label_to_onehot(train_y, C)
             loss = MSE if args.loss == "mse" else CrossEntropy
+            # Early stopping needs a val set; reuse the held-out split when
+            # available (in --test mode there is no val set so we skip it).
+            es_val_x = test_features if (method_obj._patience and not args.test) else None
+            es_val_y = label_to_onehot(test_y, C) if es_val_x is not None else None
             method_obj.fit(
                 train_features, y_one_hot, loss=loss,
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
                 beta=method_obj._beta,
+                weight_decay=method_obj._weight_decay,
+                dropout=method_obj._dropout,
+                x_val=es_val_x, y_val=es_val_y,
+                patience=method_obj._patience,
             )
+            if method_obj.stopped_epoch_ is not None:
+                print(f"  early-stopped at epoch {method_obj.stopped_epoch_}")
             preds_train = onehot_to_label(method_obj.predict(train_features))
         else:
             preds_train = method_obj.fit(train_features, train_y)
@@ -174,13 +193,21 @@ def main(args):
         t0 = time.time()
         if args.method == "mlp":
             y_train_col = train_y.reshape(-1, 1)
+            es_val_x = test_features if (method_obj._patience and not args.test) else None
+            es_val_y = test_y.reshape(-1, 1) if es_val_x is not None else None
             method_obj.fit(
                 train_features, y_train_col, loss=MSE,
                 epochs=method_obj._epochs,
                 batch_size=method_obj._batch_size,
                 learning_rate=method_obj._learning_rate,
                 beta=method_obj._beta,
+                weight_decay=method_obj._weight_decay,
+                dropout=method_obj._dropout,
+                x_val=es_val_x, y_val=es_val_y,
+                patience=method_obj._patience,
             )
+            if method_obj.stopped_epoch_ is not None:
+                print(f"  early-stopped at epoch {method_obj.stopped_epoch_}")
             preds_train = method_obj.predict(train_features).ravel()
         else:
             preds_train = method_obj.fit(train_features, train_y)
@@ -229,19 +256,19 @@ if __name__ == "__main__":
     parser.add_argument(
         "--K",
         type=int,
-        default=1,
+        default=50,
         help="number of clusters datapoints used for kmeans",
     )
     parser.add_argument(
         "--lr",
         type=float,
-        default=1e-3,
-        help="learning rate for methods with learning rate",
+        default=None,
+        help="learning rate for MLP (default: 3e-3 for classification, 3e-4 for regression)",
     )
     parser.add_argument(
         "--max_iters",
         type=int,
-        default=100,
+        default=200,
         help="max iters for methods which are iterative",
     )
     parser.add_argument(
@@ -267,7 +294,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--epochs",
         type=int,
-        default=50,
+        default=40,
         help="number of training epochs for MLP",
     )
     parser.add_argument(
@@ -287,6 +314,26 @@ if __name__ == "__main__":
         type=float,
         default=0.9,
         help="momentum coefficient for MLP (0.0 = vanilla SGD)",
+    )
+    parser.add_argument(
+        "--weight_decay",
+        type=float,
+        default=0.0,
+        help="L2 weight-decay coefficient for MLP (0.0 disables it)",
+    )
+    parser.add_argument(
+        "--dropout",
+        type=float,
+        default=0.0,
+        help="dropout probability on MLP hidden activations (0.0 disables it)",
+    )
+    parser.add_argument(
+        "--patience",
+        type=int,
+        default=0,
+        help="early-stopping patience for MLP (epochs without val-loss "
+             "improvement before stopping; 0 disables early stopping). "
+             "Only used outside --test mode, where a val split is available.",
     )
 
     # K-Means-specific arguments

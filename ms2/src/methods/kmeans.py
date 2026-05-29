@@ -134,6 +134,8 @@ class KMeans(object):
                 centers = new_centers
                 break
             centers = new_centers
+        distances = self.compute_distance(data, centers)
+        cluster_assignments = self.find_closest_cluster(distances)
         return centers, cluster_assignments
 
     def k_means(self, data, max_iter=100):
