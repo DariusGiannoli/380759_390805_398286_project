@@ -38,10 +38,9 @@ class Identity:
 
 class Softmax:
     """
-    Row-wise softmax. Its true derivative is a dense per-sample Jacobian, so
-    MLP.back_prop handles Softmax output layers explicitly. The elementwise
-    gradient here is only a compatibility fallback for the simple activation
-    interface used by the tests.
+    Row-wise softmax. Its derivative is a dense per-sample Jacobian, so
+    MLP.back_prop handles Softmax output layers explicitly. The gradient
+    method keeps the same simple activation interface as the other classes.
     """
 
     @staticmethod

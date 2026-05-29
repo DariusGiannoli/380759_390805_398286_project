@@ -86,10 +86,9 @@ class MLP:
         dW = {}
         db = {}
 
-        # Output layer. Softmax has a dense Jacobian, so handle its
-        # vector-Jacobian product explicitly instead of pretending it is an
-        # elementwise activation. For Softmax+CE this reduces to the usual
-        # closed form (p - y) / N.
+        # Output layer. Softmax has a dense Jacobian, so compute the
+        # vector-Jacobian product explicitly. For Softmax+CE this reduces to
+        # the usual closed form (p - y) / N.
         output_activation = self.activations[self.L - 1]
         if output_activation is Softmax:
             if loss is CrossEntropy:

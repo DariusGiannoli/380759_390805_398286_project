@@ -48,18 +48,15 @@ def main(args):
     ## 2. Then we must prepare it. This is where you can create a validation set,
     #  normalize, add bias, etc.
 
-    # Shuffle the training data with a fixed RandomState to avoid leakage from
-    # any latent ordering (MS1 feedback). Done in both --test and val modes so
-    # the mini-batch compositions during SGD are identical in either path.
+    # Shuffle before splitting to avoid relying on any ordering in the data.
     rs = np.random.RandomState(0)
     perm = rs.permutation(len(train_features))
     train_features       = train_features[perm]
     train_labels_reg     = train_labels_reg[perm]
     train_labels_classif = train_labels_classif[perm]
 
-    # Make a validation set (it can overwrite xtest, ytest). Even in --test
-    # mode we keep the same fixed 80/20 split only to fit preprocessing
-    # statistics, matching the report-generation protocol exactly.
+    # Make a validation set unless the official test set is requested.
+    # In test mode, use the same training subset for preprocessing statistics.
     val_size   = int(0.2 * len(train_features))
     train_size = len(train_features) - val_size
     if not args.test:
@@ -118,7 +115,7 @@ def main(args):
             activations = [hidden_act] * len(hidden_dims) + [Identity]
 
         method_obj = MLP(dimensions=tuple(dimensions), activations=tuple(activations))
-        # Stash MLP-specific knobs so the train block below can read them.
+        # Store MLP-specific hyperparameters for the training block.
         method_obj._epochs        = args.epochs
         method_obj._batch_size    = args.batch_size
         method_obj._learning_rate = learning_rate
@@ -143,8 +140,7 @@ def main(args):
             C = get_n_classes(train_y)
             y_one_hot = label_to_onehot(train_y, C)
             loss = MSE if args.loss == "mse" else CrossEntropy
-            # Early stopping needs a val set; reuse the held-out split when
-            # available (in --test mode there is no val set so we skip it).
+            # Early stopping is used only when a validation split is available.
             es_val_x = test_features if (method_obj._patience and not args.test) else None
             es_val_y = label_to_onehot(test_y, C) if es_val_x is not None else None
             method_obj.fit(
